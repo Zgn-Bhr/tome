@@ -4,29 +4,66 @@ Tome runs as a **non-Steam game**. Adding it to Steam needs Desktop Mode **once*
 
 Steps marked **(verify on device)** come from general SteamOS knowledge and haven't been checked on real hardware yet.
 
+## Quick install from GitHub (recommended)
+
+1. On the Deck, switch to **Desktop Mode** (Steam button → Power → Switch to Desktop).
+2. Open **Konsole** (application menu → System → Konsole).
+3. Paste this and press Enter (Ctrl+Shift+V pastes in Konsole):
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh | bash
+   ```
+
+   It downloads the latest release into `~/Applications/Tome.AppImage`, adds a menu entry and, on first install, adds Tome to Steam with SteamOS's `steamos-add-to-steam` (verify on device). If that helper isn't found, it tells you how to add Tome by hand (step 3 below).
+4. Switch back to Game Mode. Tome is under **Library → Non-Steam**.
+
+**Update** later by running the same command; the Steam shortcut and your progress stay as they are. Other options:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh | bash -s -- --version v0.1.0
+```
+```bash
+curl -fsSL https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh | bash -s -- --uninstall
+```
+
+If you'd rather read the script before running it:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh
+```
+```bash
+less install-deck.sh
+```
+```bash
+bash install-deck.sh
+```
+
+The rest of this page is the manual route.
+
 ## 1. Build the AppImage (on your Mac)
 
 ```bash
 npm run dist:linux
 ```
 
-The output is `dist/Tome-0.1.0-x86_64.AppImage`.
+The output is `dist/Tome-x86_64.AppImage`. Releases on GitHub carry the same file.
 
 ## 2. Copy it to the Deck
 
 Any of these works:
 
+- **GitHub release:** download `Tome-x86_64.AppImage` from the repo's Releases page in the Deck's browser.
 - **USB stick or SD card:** copy the file over, then move it on the Deck in Dolphin (the file manager).
 - **Network:** in Desktop Mode, set a password with `passwd` in Konsole and start SSH with `sudo systemctl start sshd`. Then, from the Mac:
 
   ```bash
-  scp dist/Tome-0.1.0-x86_64.AppImage deck@steamdeck.local:~/Applications/
+  scp dist/Tome-x86_64.AppImage deck@steamdeck.local:~/Applications/Tome.AppImage
   ```
 
 On the Deck, put it in `~/Applications/` and make it executable. In Dolphin: right-click → Properties → Permissions → *Is executable*. Or in Konsole:
 
 ```bash
-chmod +x ~/Applications/Tome-0.1.0-x86_64.AppImage
+chmod +x ~/Applications/Tome.AppImage
 ```
 
 ## 3. Add it to Steam (Desktop Mode, once)

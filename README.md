@@ -52,13 +52,27 @@ Any Xbox-style controller works over USB or Bluetooth. Without one, use the keyb
 
 The mouse wheel scrolls (like the left trackpad), dragging pans (like the right trackpad), and Ctrl+wheel or a pinch zooms. **Ctrl+Shift+D** toggles the debug overlay with connected gamepads.
 
+## Install on a Steam Deck
+
+In Desktop Mode, open Konsole and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh | bash
+```
+
+This installs the latest release to `~/Applications/Tome.AppImage` and adds it to Steam. Run it again to update. Details, manual steps and troubleshooting are in [docs/steam-deck-install.md](docs/steam-deck-install.md); back-grip and trackpad bindings are in [docs/steam-input-layout.md](docs/steam-input-layout.md).
+
 ## Build for Steam Deck
 
 ```bash
 npm run dist:linux
 ```
 
-This produces `dist/Tome-0.1.0-x86_64.AppImage`. Install steps are in [docs/steam-deck-install.md](docs/steam-deck-install.md), and back-grip and trackpad bindings in [docs/steam-input-layout.md](docs/steam-input-layout.md).
+This produces `dist/Tome-x86_64.AppImage`. To publish it as a release (the install script downloads from the latest release):
+
+```bash
+gh release create v0.1.0 dist/Tome-x86_64.AppImage --title "Tome v0.1.0" --notes "…"
+```
 
 ## Scripts
 

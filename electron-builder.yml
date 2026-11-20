@@ -12,7 +12,7 @@ linux:
     - target: AppImage
       arch: [x64]
   category: Office
-  artifactName: Tome-${version}-x86_64.AppImage
+  artifactName: Tome-x86_64.AppImage
   executableArgs: ["--fullscreen"]
 mac:
   target: dir
