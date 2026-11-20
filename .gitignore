@@ -1,0 +1,9 @@
+node_modules/
+out/
+dist/
+src/ui/public/pdfjs/
+fixtures/pdfs/
+.DS_Store
+*.log
+.tome-dev/
+*.tsbuildinfo

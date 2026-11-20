@@ -1,0 +1,328 @@
+// SQLite storage via Node's built-in node:sqlite (bundled with Electron 45),
+// in WAL mode so nothing is lost across suspend or a hard power-off (§12).
+
+import { DatabaseSync } from 'node:sqlite';
+import type { Book, BookStats, Bookmark, ReadingState, Session, Stage, XpEvent } from '../core/models';
+import type { BookMetaUpdate } from '../shared/api';
+import { readingDayKey } from '../core/time';
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS books (
+  id TEXT PRIMARY KEY,
+  path TEXT NOT NULL,
+  available INTEGER NOT NULL DEFAULT 1,
+  title TEXT NOT NULL,
+  author TEXT,
+  page_count INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL DEFAULT 'book',
+  has_text_layer INTEGER NOT NULL DEFAULT 0,
+  is_two_column INTEGER NOT NULL DEFAULT 0,
+  added_at INTEGER NOT NULL,
+  last_opened_at INTEGER,
+  stage_source TEXT NOT NULL DEFAULT 'even',
+  file_size INTEGER NOT NULL,
+  file_mtime INTEGER NOT NULL,
+  indexed_at INTEGER,
+  thumb_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS books_path ON books(path);
+CREATE TABLE IF NOT EXISTS stages (
+  book_id TEXT NOT NULL,
+  idx INTEGER NOT NULL,
+  label TEXT NOT NULL,
+  numeral TEXT,
+  start_page INTEGER NOT NULL,
+  end_page INTEGER NOT NULL,
+  is_final INTEGER NOT NULL,
+  PRIMARY KEY (book_id, idx)
+);
+CREATE TABLE IF NOT EXISTS reading_state (
+  book_id TEXT PRIMARY KEY,
+  page INTEGER NOT NULL,
+  scroll_y REAL NOT NULL,
+  segment INTEGER,
+  zoom REAL NOT NULL,
+  fit TEXT NOT NULL,
+  fit_chosen INTEGER NOT NULL DEFAULT 0,
+  theme_override TEXT,
+  orientation TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS page_progress (
+  book_id TEXT NOT NULL,
+  page INTEGER NOT NULL,
+  dwell_ms INTEGER NOT NULL,
+  viewed_fraction REAL NOT NULL,
+  counted INTEGER NOT NULL,
+  counted_at INTEGER,
+  PRIMARY KEY (book_id, page)
+);
+CREATE TABLE IF NOT EXISTS bookmarks (
+  id TEXT PRIMARY KEY,
+  book_id TEXT NOT NULL,
+  page INTEGER NOT NULL,
+  scroll_y REAL NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  book_id TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  active_ms INTEGER NOT NULL,
+  start_page INTEGER NOT NULL,
+  end_page INTEGER,
+  counted_pages INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS xp_events (
+  id TEXT PRIMARY KEY,
+  at INTEGER NOT NULL,
+  amount INTEGER NOT NULL,
+  reason TEXT NOT NULL,
+  book_id TEXT,
+  stage_index INTEGER,
+  page INTEGER,
+  session_id TEXT
+);
+CREATE TABLE IF NOT EXISTS trophy_unlocks (
+  trophy_id TEXT NOT NULL,
+  book_id TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL,
+  PRIMARY KEY (trophy_id, book_id)
+);
+CREATE TABLE IF NOT EXISTS collections (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  smart TEXT,
+  book_ids TEXT NOT NULL DEFAULT '[]'
+);
+`;
+
+type Row = Record<string, unknown>;
+const str = (v: unknown) => (v === null || v === undefined ? undefined : String(v));
+const num = (v: unknown) => (v === null || v === undefined ? undefined : Number(v));
+
+function rowToBook(r: Row): Book {
+  return {
+    id: String(r.id),
+    path: String(r.path),
+    available: Number(r.available) === 1,
+    title: String(r.title),
+    ...(str(r.author) ? { author: str(r.author)! } : {}),
+    pageCount: Number(r.page_count),
+    kind: r.kind === 'paper' ? 'paper' : 'book',
+    hasTextLayer: Number(r.has_text_layer) === 1,
+    isTwoColumn: Number(r.is_two_column) === 1,
+    addedAt: Number(r.added_at),
+    ...(num(r.last_opened_at) !== undefined ? { lastOpenedAt: num(r.last_opened_at)! } : {}),
+    stageSource: (str(r.stage_source) as Book['stageSource']) ?? 'even',
+    ...(num(r.indexed_at) !== undefined ? { indexedAt: num(r.indexed_at)! } : {}),
+    ...(num(r.thumb_at) !== undefined ? { thumbAt: num(r.thumb_at)! } : {}),
+    fileSize: Number(r.file_size),
+  };
+}
+
+export interface FileRow {
+  id: string;
+  path: string;
+  size: number;
+  mtime: number;
+}
+
+export class TomeDb {
+  private db: DatabaseSync;
+
+  constructor(file: string) {
+    this.db = new DatabaseSync(file);
+    this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;');
+    this.db.exec(SCHEMA);
+  }
+
+  close(): void {
+    this.db.close();
+  }
+
+  // ── Books ──────────────────────────────────────────────────────────────
+
+  books(): Book[] {
+    return (this.db.prepare('SELECT * FROM books ORDER BY added_at DESC').all() as Row[]).map(rowToBook);
+  }
+
+  bookPath(id: string): string | undefined {
+    const r = this.db.prepare('SELECT path FROM books WHERE id = ? AND available = 1').get(id) as Row | undefined;
+    return r ? String(r.path) : undefined;
+  }
+
+  fileIndex(): Map<string, FileRow> {
+    const rows = this.db.prepare('SELECT id, path, file_size, file_mtime FROM books').all() as Row[];
+    return new Map(
+      rows.map((r) => [String(r.path), { id: String(r.id), path: String(r.path), size: Number(r.file_size), mtime: Number(r.file_mtime) }]),
+    );
+  }
+
+  /** Apply one scan: insert new books, update moved ones, flag missing ones. */
+  applyScan(found: { id: string; path: string; size: number; mtime: number; title: string; addedAt: number }[]): void {
+    const seen = new Set(found.map((f) => f.id));
+    const exists = this.db.prepare('SELECT id FROM books WHERE id = ?');
+    const insert = this.db.prepare(
+      `INSERT INTO books (id, path, available, title, added_at, file_size, file_mtime)
+       VALUES (?, ?, 1, ?, ?, ?, ?)`,
+    );
+    const update = this.db.prepare('UPDATE books SET path = ?, available = 1, file_size = ?, file_mtime = ? WHERE id = ?');
+    this.tx(() => {
+      for (const f of found) {
+        if (exists.get(f.id)) update.run(f.path, f.size, f.mtime, f.id);
+        else insert.run(f.id, f.path, f.title, f.addedAt, f.size, f.mtime);
+      }
+      const all = this.db.prepare('SELECT id FROM books WHERE available = 1').all() as Row[];
+      const missing = this.db.prepare('UPDATE books SET available = 0 WHERE id = ?');
+      for (const r of all) if (!seen.has(String(r.id))) missing.run(String(r.id));
+    });
+  }
+
+  setBookMeta(id: string, m: BookMetaUpdate, stages: Stage[]): void {
+    this.tx(() => {
+      this.db
+        .prepare(
+          `UPDATE books SET title = ?, author = ?, page_count = ?, kind = ?, has_text_layer = ?,
+           is_two_column = ?, stage_source = ?, indexed_at = ? WHERE id = ?`,
+        )
+        .run(m.title, m.author ?? null, m.pageCount, m.kind, m.hasTextLayer ? 1 : 0, m.isTwoColumn ? 1 : 0, m.stageSource, Date.now(), id);
+      this.db.prepare('DELETE FROM stages WHERE book_id = ?').run(id);
+      const ins = this.db.prepare(
+        'INSERT INTO stages (book_id, idx, label, numeral, start_page, end_page, is_final) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      );
+      for (const s of stages) ins.run(id, s.index, s.label, s.numeral ?? null, s.startPage, s.endPage, s.isFinal ? 1 : 0);
+    });
+  }
+
+  setThumb(id: string, at: number): void {
+    this.db.prepare('UPDATE books SET thumb_at = ? WHERE id = ?').run(at, id);
+  }
+
+  markOpened(id: string, at: number): void {
+    this.db.prepare('UPDATE books SET last_opened_at = ? WHERE id = ?').run(at, id);
+  }
+
+  stages(): Stage[] {
+    return (this.db.prepare('SELECT * FROM stages ORDER BY book_id, idx').all() as Row[]).map((r) => ({
+      bookId: String(r.book_id),
+      index: Number(r.idx),
+      label: String(r.label),
+      ...(str(r.numeral) ? { numeral: str(r.numeral)! } : {}),
+      startPage: Number(r.start_page),
+      endPage: Number(r.end_page),
+      isFinal: Number(r.is_final) === 1,
+    }));
+  }
+
+  // ── Reading state, bookmarks, sessions ────────────────────────────────
+
+  readingStates(): ReadingState[] {
+    return (this.db.prepare('SELECT * FROM reading_state').all() as Row[]).map((r) => ({
+      bookId: String(r.book_id),
+      page: Number(r.page),
+      scrollY: Number(r.scroll_y),
+      ...(num(r.segment) !== undefined ? { segment: num(r.segment)! } : {}),
+      zoom: Number(r.zoom),
+      fit: String(r.fit) as ReadingState['fit'],
+      fitChosen: Number(r.fit_chosen) === 1,
+      ...(str(r.theme_override) ? { themeOverride: str(r.theme_override) as ReadingState['themeOverride'] } : {}),
+      orientation: String(r.orientation) as ReadingState['orientation'],
+    }));
+  }
+
+  saveReadingState(s: ReadingState): void {
+    this.db
+      .prepare(
+        `INSERT INTO reading_state (book_id, page, scroll_y, segment, zoom, fit, fit_chosen, theme_override, orientation, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(book_id) DO UPDATE SET page = excluded.page, scroll_y = excluded.scroll_y, segment = excluded.segment,
+           zoom = excluded.zoom, fit = excluded.fit, fit_chosen = excluded.fit_chosen, theme_override = excluded.theme_override,
+           orientation = excluded.orientation, updated_at = excluded.updated_at`,
+      )
+      .run(s.bookId, s.page, s.scrollY, s.segment ?? null, s.zoom, s.fit, s.fitChosen ? 1 : 0, s.themeOverride ?? null, s.orientation, Date.now());
+  }
+
+  bookmarks(): Bookmark[] {
+    return (this.db.prepare('SELECT * FROM bookmarks ORDER BY book_id, page').all() as Row[]).map((r) => ({
+      id: String(r.id),
+      bookId: String(r.book_id),
+      page: Number(r.page),
+      scrollY: Number(r.scroll_y),
+      createdAt: Number(r.created_at),
+    }));
+  }
+
+  addBookmark(b: Bookmark): void {
+    this.db
+      .prepare('INSERT OR REPLACE INTO bookmarks (id, book_id, page, scroll_y, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(b.id, b.bookId, b.page, b.scrollY, b.createdAt);
+  }
+
+  removeBookmark(id: string): void {
+    this.db.prepare('DELETE FROM bookmarks WHERE id = ?').run(id);
+  }
+
+  saveSession(s: Session): void {
+    this.db
+      .prepare(
+        `INSERT INTO sessions (id, book_id, started_at, ended_at, active_ms, start_page, end_page, counted_pages)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET ended_at = excluded.ended_at, active_ms = excluded.active_ms,
+           end_page = excluded.end_page, counted_pages = excluded.counted_pages`,
+      )
+      .run(s.id, s.bookId, s.startedAt, s.endedAt ?? null, Math.round(s.activeMs), s.startPage, s.endPage ?? null, s.countedPages);
+  }
+
+  bookStats(): BookStats[] {
+    const rows = this.db
+      .prepare(
+        `SELECT book_id, SUM(active_ms) AS active_ms, COUNT(*) AS sessions, MAX(COALESCE(ended_at, started_at)) AS last_at
+         FROM sessions WHERE active_ms > 0 GROUP BY book_id`,
+      )
+      .all() as Row[];
+    return rows.map((r) => ({
+      bookId: String(r.book_id),
+      activeMs: Number(r.active_ms),
+      sessions: Number(r.sessions),
+      ...(num(r.last_at) !== undefined ? { lastSessionAt: num(r.last_at)! } : {}),
+    }));
+  }
+
+  // ── Game layer (ledger reads; writes arrive with M3) ──────────────────
+
+  xpEvents(): XpEvent[] {
+    return (this.db.prepare('SELECT * FROM xp_events ORDER BY at').all() as Row[]).map((r) => ({
+      id: String(r.id),
+      at: Number(r.at),
+      amount: Number(r.amount),
+      reason: String(r.reason) as XpEvent['reason'],
+      ...(str(r.book_id) ? { bookId: str(r.book_id)! } : {}),
+      ...(num(r.stage_index) !== undefined ? { stageIndex: num(r.stage_index)! } : {}),
+      ...(num(r.page) !== undefined ? { page: num(r.page)! } : {}),
+      ...(str(r.session_id) ? { sessionId: str(r.session_id)! } : {}),
+    }));
+  }
+
+  pagesByDay(): [string, number][] {
+    const rows = this.db.prepare('SELECT counted_at FROM page_progress WHERE counted = 1 AND counted_at IS NOT NULL').all() as Row[];
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      const k = readingDayKey(Number(r.counted_at));
+      map.set(k, (map.get(k) ?? 0) + 1);
+    }
+    return [...map.entries()];
+  }
+
+  private tx(fn: () => void): void {
+    this.db.exec('BEGIN');
+    try {
+      fn();
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+}
