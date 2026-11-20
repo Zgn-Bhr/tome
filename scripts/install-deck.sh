@@ -66,7 +66,7 @@ trap 'rm -f "$tmp"' EXIT
 
 say "Downloading $ASSET ($version) from github.com/$REPO"
 curl -fL --progress-bar -o "$tmp" "$url"
-chmod +x "$tmp"
+chmod 755 "$tmp"
 mv -f "$tmp" "$APP"
 trap - EXIT
 say "Installed $APP"
