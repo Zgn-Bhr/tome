@@ -53,7 +53,7 @@ export function FolderPicker({ firstRun = false, onClose }: { firstRun?: boolean
     setAdding(true);
     try {
       await addFolder(path);
-      toast.show({ kind: 'neutral', eyebrow: 'FOLDER ADDED', line: path.split('/').pop() || path });
+      toast.show({ kind: 'neutral', icon: 'shelf', eyebrow: 'FOLDER ADDED', line: path.split('/').pop() || path });
       onClose();
     } finally {
       setAdding(false);

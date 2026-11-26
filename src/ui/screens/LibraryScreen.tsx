@@ -6,6 +6,7 @@ import { C } from '../tokens';
 import { HomeTab } from './HomeTab';
 import { LibraryTab } from './LibraryTab';
 import { PlaceholderTab } from './PlaceholderTab';
+import { CollectionsTab } from './CollectionsTab';
 
 export interface TabProps {
   /** Move to the previous (-1) or next (+1) tab, wrapping around. */
@@ -37,9 +38,7 @@ export function LibraryScreen({ route }: { route: Extract<Route, { name: 'librar
       <LibraryHeader tab={route.tab} />
       {route.tab === 'home' ? <HomeTab {...props} /> : null}
       {route.tab === 'library' ? <LibraryTab key={route.openSort ? 'sort' : 'grid'} {...props} openSort={!!route.openSort} /> : null}
-      {route.tab === 'collections' ? (
-        <PlaceholderTab {...props} title="COLLECTIONS" body="Shelves for your own collections, plus smart Papers and Books shelves, arrive in a later build." />
-      ) : null}
+      {route.tab === 'collections' ? <CollectionsTab {...props} /> : null}
       {route.tab === 'trophies' ? (
         <PlaceholderTab {...props} title="TROPHIES" body="Trophies unlock once the game layer starts counting pages you've read. The full trophy case arrives in a later build." />
       ) : null}

@@ -13,7 +13,7 @@ Stack: **Electron 45 + React 19 + TypeScript + pdf.js 6**, built with electron-v
 | **M2 Library**: folder scan, SQLite, cover thumbnails, Home, Library grid with filters and sort, Book details, first-run folder picker | Done |
 | **M3 Stages and game layer**: stage derivation, stage map (Book details and reader Y), page counting by dwell and coverage, XP ledger, levels, daily quest, streak, stage and book clears, trophies, toasts, Session complete, Full/Light/Off intensity | Done (the alternative "XP per minute" model is not built) |
 | M4 Papers (auto-crop, column mode, heading stages) | Not started (the paper heuristic and kind badge already work) |
-| M5 Tate mode, full Settings, Search, Collections, Trophies tab, links | Not started (a first Settings overlay exists) |
+| M5 Tate mode, full Settings, Search, Collections, Trophies tab, links | Partly done: **Collections** (your shelves plus smart Papers/Books shelves; add with X, rename or delete with Menu) and the **in-app keyboard** are built, and a first Settings overlay exists. Tate mode, Search, the Trophies tab and links are not started. |
 | M6 Ship on Deck: AppImage, install notes, Steam Input layout, artwork | Build script and docs written; on-device QA still to do |
 
 ## Run it on your Mac
@@ -113,7 +113,9 @@ scripts/      fixture generator, pdf.js asset copy
 - **Front matter:** if the first outline entry starts 3 or more pages in, those pages become a "Front matter" stage; a shorter gap joins stage 1.
 - **Short numerals:** when most stages are numbered, unnumbered ones get a short numeral ("Intro", "Pref", "Epil") so the map doesn't mix "1" with "I, II".
 - **Settings:** a first overlay with the settings that already work (folders, rescan, theme, fit, gutters, transition, Zen, game layer, daily goal, haptics, reduce motion, debug). Back-grip keys are shown but not yet editable.
-- **Search, Collections and Trophies** aren't built yet: Y shows a "later build" toast, and the two tabs show a placeholder.
+- **Search and the Trophies tab** aren't built yet: Y shows a "later build" toast, and the Trophies tab shows a placeholder.
+- **Collections (§7.8, not designed):** built in the same style as Home's shelf. Your collections come first, then the smart Papers and Books shelves (read-only, hidden when empty). Because the smart shelves hold every book, X on any book in this tab opens "Add to collection"; elsewhere X still opens Book details, as §6.3 says. A "New collection" button at the bottom makes an empty shelf.
+- **In-app keyboard:** D-pad and A type, X deletes, Y adds a space, L1/R1 move the cursor, Menu is done, B cancels. Typing on a physical keyboard (or Steam's) also works while it's open: letters type instead of acting as buttons, and Enter means done.
 
 ## Open decisions (spec §16)
 

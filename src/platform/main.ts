@@ -6,7 +6,7 @@ import { readFile, stat, writeFile, rename } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { extname, join, normalize, sep } from 'node:path';
 import { Readable } from 'node:stream';
-import type { Bookmark, ReadingState, Session, Settings, Stage } from '../core/models';
+import type { Bookmark, Collection, ReadingState, Session, Settings, Stage } from '../core/models';
 import { IPC, SCHEME, type AppEnv, type Bootstrap, type BookMetaUpdate, type GameBatch, type PowerEvent } from '../shared/api';
 import { TomeDb } from './db';
 import { listDir, scanLibrary } from './library';
@@ -175,8 +175,14 @@ function registerIpc(): void {
       counted: db.countedPages(),
       trophies: db.trophyUnlocks(),
       bestSessionPages: db.bestSessionPages(),
+      collections: db.collections(),
     };
   });
+  ipcMain.handle(IPC.saveCollection, (_e, c: Collection) => {
+    if (typeof c?.id !== 'string' || c.id.startsWith('smart:') || typeof c.name !== 'string' || !Array.isArray(c.bookIds)) throw new Error('bad collection');
+    db.saveCollection({ id: c.id, name: c.name.slice(0, 80), bookIds: c.bookIds.filter((id) => typeof id === 'string' && BOOK_ID.test(id)) });
+  });
+  ipcMain.handle(IPC.deleteCollection, (_e, id: unknown) => db.deleteCollection(String(id)));
   ipcMain.handle(IPC.pageProgress, (_e, id: unknown) => db.pageProgress(assertId(id)));
   ipcMain.handle(IPC.recordGame, (_e, batch: GameBatch) => {
     for (const p of batch.progress) assertId(p.bookId);

@@ -13,6 +13,11 @@ export interface InputHandler {
   onAction: (e: ActionEvent) => void;
   /** Called every frame with analog values while this handler is on top. */
   onFrame?: (analog: AnalogOutput, dtSec: number, now: number) => void;
+  /**
+   * Text-input mode: while this handler is on top, typed characters (from a
+   * keyboard or Steam's own) arrive here instead of acting as buttons.
+   */
+  onText?: (t: string | { key: 'backspace' | 'enter' | 'left' | 'right' }) => void;
 }
 
 interface Entry {
@@ -123,6 +128,16 @@ export function InputProvider({ children }: { children: ReactNode }) {
 
     const onKey = (down: boolean) => (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return; // leave OS / devtools shortcuts alone
+      const text = stack.current[stack.current.length - 1]?.handler.current.onText;
+      if (text) {
+        const special = e.key === 'Backspace' ? 'backspace' : e.key === 'Enter' ? 'enter' : null;
+        if (e.key.length === 1 || special) {
+          e.preventDefault();
+          lastInput.current = performance.now();
+          if (down) text(special ? { key: special } : e.key);
+          return;
+        }
+      }
       const map = keyMap(store.get().settings.backGripKeys);
       const b = map[normaliseKey(e.key)];
       if (!b) return;

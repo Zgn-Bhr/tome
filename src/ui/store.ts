@@ -1,7 +1,7 @@
 // A small external store for app data, read with useSyncExternalStore.
 
 import { useMemo, useSyncExternalStore } from 'react';
-import type { Book, BookStats, Bookmark, ReadingState, Settings, Stage, TrophyUnlock, XpEvent } from '../core/models';
+import type { Book, BookStats, Bookmark, Collection, ReadingState, Settings, Stage, TrophyUnlock, XpEvent } from '../core/models';
 import { DEFAULT_SETTINGS } from '../core/settings';
 import { progressOf, type BookView } from '../core/library';
 import { ledgerFacts, type LedgerFacts } from '../core/gamification/engine';
@@ -23,6 +23,8 @@ export interface AppState {
   counted: Record<string, ReadonlySet<number>>;
   trophies: TrophyUnlock[];
   bestSessionPages: number;
+  /** User collections in creation order (smart ones are derived). */
+  collections: Collection[];
   scanning: boolean;
   indexing: { done: number; total: number } | null;
   /** The reader is open: background indexing pauses (§12 battery). */
@@ -44,6 +46,7 @@ let state: AppState = {
   counted: {},
   trophies: [],
   bestSessionPages: 0,
+  collections: [],
   scanning: false,
   indexing: null,
   reading: false,

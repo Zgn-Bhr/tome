@@ -2,7 +2,7 @@
 // in WAL mode so nothing is lost across suspend or a hard power-off (§12).
 
 import { DatabaseSync } from 'node:sqlite';
-import type { Book, BookStats, Bookmark, PageProgress, ReadingState, Session, Stage, TrophyUnlock, XpEvent } from '../core/models';
+import type { Book, BookStats, Bookmark, Collection, PageProgress, ReadingState, Session, Stage, TrophyUnlock, XpEvent } from '../core/models';
 import type { BookMetaUpdate, GameBatch } from '../shared/api';
 import { readingDayKey } from '../core/time';
 
@@ -288,6 +288,34 @@ export class TomeDb {
       sessions: Number(r.sessions),
       ...(num(r.last_at) !== undefined ? { lastSessionAt: num(r.last_at)! } : {}),
     }));
+  }
+
+  // ── Collections (user ones; smart ones are computed) ──────────────────
+
+  collections(): Collection[] {
+    return (this.db.prepare('SELECT * FROM collections WHERE smart IS NULL ORDER BY rowid').all() as Row[]).map((r) => {
+      let bookIds: string[] = [];
+      try {
+        const parsed = JSON.parse(String(r.book_ids)) as unknown;
+        if (Array.isArray(parsed)) bookIds = parsed.filter((x): x is string => typeof x === 'string');
+      } catch {
+        /* corrupt row: treat as empty */
+      }
+      return { id: String(r.id), name: String(r.name), bookIds };
+    });
+  }
+
+  saveCollection(c: Collection): void {
+    this.db
+      .prepare(
+        `INSERT INTO collections (id, name, smart, book_ids) VALUES (?, ?, NULL, ?)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, book_ids = excluded.book_ids`,
+      )
+      .run(c.id, c.name, JSON.stringify(c.bookIds));
+  }
+
+  deleteCollection(id: string): void {
+    this.db.prepare('DELETE FROM collections WHERE id = ?').run(id);
   }
 
   // ── Game layer ────────────────────────────────────────────────────────

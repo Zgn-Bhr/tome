@@ -1,7 +1,8 @@
 // App-level actions: bootstrap, library scan, background indexing, and the
 // writes that keep the store and the database in step.
 
-import type { Bookmark, ReadingState, Session, Settings } from '../core/models';
+import type { Bookmark, Collection, ReadingState, Session, Settings } from '../core/models';
+import { cleanName, toggleBook } from '../core/collections';
 import { deriveStages } from '../core/stages/derive';
 import { guessKind } from '../core/library';
 import { pdfUrl, type GameBatch } from '../shared/api';
@@ -27,6 +28,7 @@ export async function bootstrap(): Promise<void> {
     counted: Object.fromEntries(b.counted.map(([id, pages]) => [id, new Set(pages)])),
     trophies: b.trophies,
     bestSessionPages: b.bestSessionPages,
+    collections: b.collections,
   }));
   if (b.settings.rescanOnLaunch || b.books.length === 0) void rescan();
   else void indexPending();
@@ -200,6 +202,42 @@ export function recordGame(batch: GameBatch, newlyCounted: { bookId: string; pag
       bestSessionPages: Math.max(s.bestSessionPages, sessionPages),
     };
   });
+}
+
+// ── Collections (§7.8) ────────────────────────────────────────────────────
+
+function putCollection(c: Collection): void {
+  store.set((s) => {
+    const i = s.collections.findIndex((x) => x.id === c.id);
+    const collections = i >= 0 ? s.collections.map((x) => (x.id === c.id ? c : x)) : [...s.collections, c];
+    return { collections };
+  });
+  void api.saveCollection(c);
+}
+
+export function createCollection(name: string, bookIds: string[] = []): Collection {
+  const c: Collection = { id: crypto.randomUUID(), name: cleanName(name), bookIds };
+  putCollection(c);
+  return c;
+}
+
+export function renameCollection(id: string, name: string): void {
+  const c = store.get().collections.find((x) => x.id === id);
+  if (c) putCollection({ ...c, name: cleanName(name) });
+}
+
+export function deleteCollection(id: string): void {
+  store.set((s) => ({ collections: s.collections.filter((x) => x.id !== id) }));
+  void api.deleteCollection(id);
+}
+
+/** Add or remove a book; returns true if the book is now in the collection. */
+export function toggleInCollection(id: string, bookId: string): boolean {
+  const c = store.get().collections.find((x) => x.id === id);
+  if (!c) return false;
+  const next = toggleBook(c, bookId);
+  putCollection(next);
+  return next.bookIds.includes(bookId);
 }
 
 /** Persist a session and fold it into the per-book stats. */

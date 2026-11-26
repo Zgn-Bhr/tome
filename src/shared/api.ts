@@ -5,6 +5,7 @@ import type {
   BookKind,
   BookStats,
   Bookmark,
+  Collection,
   PageProgress,
   ReadingState,
   Session,
@@ -44,6 +45,8 @@ export interface Bootstrap {
   trophies: TrophyUnlock[];
   /** Most counted pages in any one session (Marathon progress). */
   bestSessionPages: number;
+  /** User collections, in creation order (smart ones are computed). */
+  collections: Collection[];
 }
 
 /** One write of game-layer progress (§4): page rows, new ledger events, unlocks. */
@@ -98,6 +101,8 @@ export interface TomeApi {
   saveSession(session: Session): Promise<void>;
   pageProgress(bookId: string): Promise<PageProgress[]>;
   recordGame(batch: GameBatch): Promise<void>;
+  saveCollection(c: Collection): Promise<void>;
+  deleteCollection(id: string): Promise<void>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
   listDir(path?: string): Promise<DirListing>;
   quit(): Promise<void>;
@@ -116,6 +121,8 @@ export const IPC = {
   saveSession: 'tome:saveSession',
   pageProgress: 'tome:pageProgress',
   recordGame: 'tome:recordGame',
+  saveCollection: 'tome:saveCollection',
+  deleteCollection: 'tome:deleteCollection',
   setSettings: 'tome:setSettings',
   listDir: 'tome:listDir',
   quit: 'tome:quit',
