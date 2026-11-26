@@ -1,0 +1,43 @@
+# Publishes the download page at https://zgn-bhr.github.io/tome/
+# The install script is copied from scripts/install-deck.sh, so there is one
+# source of truth for both the short command and the raw GitHub link.
+name: Download page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - scripts/install-deck.sh
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp -r site/. _site/
+          cp scripts/install-deck.sh _site/install
+          bash -n _site/install
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v5

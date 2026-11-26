@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tome — PDF reader for Steam Deck</title>
+<meta name="description" content="Tome is a controller-first PDF reader for Steam Deck Game Mode, with stages, XP and streaks around your reading. Free, offline, no account.">
+<style>
+  @font-face { font-family: 'Chakra Petch'; font-weight: 600; font-display: swap; src: url(fonts/chakra-petch-latin-600-normal.woff2) format('woff2'); }
+  @font-face { font-family: 'Chakra Petch'; font-weight: 700; font-display: swap; src: url(fonts/chakra-petch-latin-700-normal.woff2) format('woff2'); }
+  @font-face { font-family: 'Inter'; font-weight: 400; font-display: swap; src: url(fonts/inter-latin-400-normal.woff2) format('woff2'); }
+  @font-face { font-family: 'Inter'; font-weight: 600; font-display: swap; src: url(fonts/inter-latin-600-normal.woff2) format('woff2'); }
+
+  :root {
+    --bg: #0D1120; --bg-deep: #07090F; --surface: #161C31; --inset: #10162A; --line: #232B4A; --line-strong: #2A3356;
+    --text: #EEF1F8; --text-2: #C5CBE0; --muted: #A6AECB; --dim: #8890AD;
+    --gold: #F5B947; --gold-on: #1A1405; --gold-surface: #2A2312; --gold-border: #5B4A22; --cyan: #58C7E6;
+    --head: 'Chakra Petch', system-ui, sans-serif; --body: 'Inter', system-ui, sans-serif; --mono: ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 400 16px/1.6 var(--body); -webkit-font-smoothing: antialiased; }
+  a { color: var(--cyan); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+  header.top { border-bottom: 1px solid #1D2440; }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 68px; gap: 16px; }
+  .logo { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text); font: 700 21px/1 var(--head); letter-spacing: .18em; }
+  .top nav { display: flex; gap: 22px; font: 600 14px/1 var(--head); letter-spacing: .08em; }
+  .top nav a { color: var(--muted); text-decoration: none; }
+  .top nav a:hover { color: var(--text); }
+
+  .hero { background: radial-gradient(ellipse 60% 90% at 25% 0%, rgba(88,199,230,.10), transparent 70%); padding: 64px 0 40px; }
+  .hero .wrap { display: grid; grid-template-columns: 1fr 1.15fr; gap: 48px; align-items: center; }
+  .eyebrow { font: 600 13px/1 var(--head); letter-spacing: .16em; color: var(--cyan); text-transform: uppercase; }
+  h1 { margin: 14px 0 0; font: 700 clamp(34px, 5vw, 52px)/1.05 var(--head); letter-spacing: .02em; }
+  .lede { margin: 18px 0 0; font-size: 18px; color: var(--text-2); max-width: 30em; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; height: 50px; padding: 0 24px 0 10px; border-radius: 25px; font: 700 16px/1 var(--head); letter-spacing: .06em; text-decoration: none; text-transform: uppercase; }
+  .btn .g { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+  .btn.primary { background: var(--gold); color: var(--gold-on); }
+  .btn.primary .g { background: var(--gold-on); color: var(--gold); }
+  .btn.secondary { background: #212946; color: var(--text); border: 1px solid #333D66; }
+  .btn.secondary .g { background: #333D66; }
+  .btn:focus-visible, .copy:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+  .meta { margin-top: 16px; font-size: 14px; color: var(--dim); }
+  .meta b { color: var(--muted); font-weight: 600; }
+  .shot { width: 100%; height: auto; display: block; border-radius: 14px; border: 1px solid var(--line-strong); box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+
+  section { padding: 56px 0; }
+  h2 { margin: 0 0 8px; font: 700 28px/1.15 var(--head); letter-spacing: .04em; }
+  .sub { margin: 0 0 28px; color: var(--muted); }
+
+  .install { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 26px 26px 24px; }
+  .card h3 { margin: 10px 0 4px; font: 600 22px/1.2 var(--head); }
+  .card .hint { margin: 0 0 18px; color: var(--muted); font-size: 15px; }
+  ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 14px; }
+  ol.steps li { counter-increment: s; display: grid; grid-template-columns: 30px 1fr; gap: 12px; color: var(--text-2); font-size: 15px; }
+  ol.steps li::before { content: counter(s); width: 28px; height: 28px; border-radius: 50%; background: #2B3354; color: #F2F4FA; display: flex; align-items: center; justify-content: center; font: 700 14px/1 var(--head); }
+  ol.steps b { color: var(--text); font-weight: 600; }
+  .note { margin-top: 18px; padding: 12px 14px; border-radius: 12px; background: var(--inset); border: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+  .cmd { display: flex; align-items: stretch; margin: 4px 0 14px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--bg-deep); overflow: hidden; }
+  .cmd code { flex: 1; padding: 14px 16px; font: 500 14px/1.5 var(--mono); color: var(--text); overflow-x: auto; white-space: nowrap; }
+  .copy { flex: none; border: 0; border-left: 1px solid var(--line-strong); background: var(--surface); color: var(--text); font: 700 13px/1 var(--head); letter-spacing: .08em; padding: 0 18px; cursor: pointer; }
+  .copy:hover { background: #1E2542; }
+  .small { font-size: 14px; color: var(--muted); }
+  .small code { font: 13px var(--mono); color: var(--text-2); background: var(--inset); padding: 2px 6px; border-radius: 6px; }
+
+  .gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  figure { margin: 0; }
+  figcaption { margin-top: 10px; font-size: 14px; color: var(--muted); }
+
+  .features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .feature { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+  .feature h3 { margin: 0 0 6px; font: 600 17px/1.25 var(--head); }
+  .feature p { margin: 0; font-size: 14px; color: var(--muted); }
+  .feature .bar { height: 4px; width: 36px; border-radius: 2px; background: var(--gold); margin-bottom: 14px; }
+  .feature:nth-child(2) .bar, .feature:nth-child(4) .bar { background: var(--cyan); }
+
+  footer { border-top: 1px solid #1D2440; padding: 28px 0 40px; color: var(--dim); font-size: 13px; }
+  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+  footer a { color: var(--muted); }
+
+  @media (max-width: 860px) {
+    .hero .wrap, .install, .gallery { grid-template-columns: 1fr; }
+    .features { grid-template-columns: 1fr 1fr; }
+    .hero { padding-top: 40px; }
+    .top nav { display: none; }
+  }
+  @media (max-width: 480px) {
+    .features { grid-template-columns: 1fr; }
+    .btn { width: 100%; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="./">
+      <svg width="28" height="28" viewBox="0 0 30 30" fill="none" stroke="#58C7E6" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M15 8c-3-2-7-2.5-11-2v17c4-.5 8 0 11 2 3-2 7-2.5 11-2V6c-4-.5-8 0-11 2z"/><path d="M15 8v17"/></svg>
+      TOME
+    </a>
+    <nav aria-label="Page">
+      <a href="#install">Install</a>
+      <a href="#screens">Screens</a>
+      <a href="https://github.com/Zgn-Bhr/tome">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <span class="eyebrow">PDF reader for Steam Deck</span>
+        <h1>Read PDFs in Game Mode, with a controller.</h1>
+        <p class="lede">Books and papers, page by page or column by column. Stages, XP and streaks keep you going, and never get in the way of reading.</p>
+        <div class="actions">
+          <a class="btn primary" id="download" href="https://github.com/Zgn-Bhr/tome/releases/latest/download/Tome-x86_64.AppImage">
+            <span class="g" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg></span>
+            Download for Steam Deck
+          </a>
+          <a class="btn secondary" href="#install">
+            <span class="g" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F2F4FA" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span>
+            How to install
+          </a>
+        </div>
+        <p class="meta"><b id="version">Latest release</b> · Free · Offline, no account · Early build: not yet tested on Steam Deck hardware</p>
+      </div>
+      <img class="shot" src="img/home.jpg" width="1280" height="800" alt="Tome's Home screen: a Continue reading card, the daily quest, the next trophy, and a shelf of recently added books.">
+    </div>
+  </div>
+
+  <section id="install">
+    <div class="wrap">
+      <h2>Install</h2>
+      <p class="sub">Do this once in Desktop Mode (Steam button → Power → Switch to Desktop). After that, Tome starts from your Steam library in Game Mode.</p>
+      <div class="install">
+        <div class="card">
+          <span class="eyebrow">No terminal</span>
+          <h3>Download and add to Steam</h3>
+          <p class="hint">Point and click, in Desktop Mode.</p>
+          <ol class="steps">
+            <li><span>On the Deck, open this page and press <b>Download for Steam Deck</b>.</span></li>
+            <li><span>Open <b>Dolphin</b> (the file manager) and go to <b>Downloads</b>. Move <b>Tome-x86_64.AppImage</b> somewhere it can stay, such as a new <b>Applications</b> folder in your home folder.</span></li>
+            <li><span>Right-click the file → <b>Properties</b> → <b>Permissions</b>, tick <b>Is executable</b>, then <b>OK</b>.</span></li>
+            <li><span>Right-click it again and choose <b>Add to Steam</b>. No such entry? Open Steam → <b>Games</b> → <b>Add a Non-Steam Game</b> → <b>Browse</b>, set the filter to <b>All Files</b> and pick the file.</span></li>
+            <li><span>Switch back to Game Mode. Tome is under <b>Library → Non-Steam</b>.</span></li>
+          </ol>
+          <p class="note">To update later, download the new version and replace the old file with it (same name, same folder). Your library and progress stay.</p>
+        </div>
+        <div class="card">
+          <span class="eyebrow">One command</span>
+          <h3>Paste into Konsole</h3>
+          <p class="hint">Open Konsole from the app menu (System → Konsole), paste with <b>Ctrl+Shift+V</b>, press Enter.</p>
+          <div class="cmd">
+            <code id="cmd">curl -sL https://zgn-bhr.github.io/tome/install | bash</code>
+            <button class="copy" type="button" data-copy="cmd">COPY</button>
+          </div>
+          <ol class="steps">
+            <li><span>Downloads the latest version to <b>~/Applications/Tome.AppImage</b>.</span></li>
+            <li><span>Adds Tome to the Desktop Mode menu and, the first time, to Steam.</span></li>
+            <li><span>Run the same command again any time to <b>update</b>.</span></li>
+          </ol>
+          <p class="small">Remove Tome with <code>curl -sL https://zgn-bhr.github.io/tome/install | bash -s -- --uninstall</code>. It's a short <a href="install">script you can read first</a>.</p>
+        </div>
+      </div>
+      <p class="small" style="margin-top:22px">Then bind the back grips (L4/L5/R4/R5) and trackpads in Tome's Steam controller settings: see the <a href="https://github.com/Zgn-Bhr/tome/blob/main/docs/steam-input-layout.md">Steam Input guide</a>. Trouble starting? See <a href="https://github.com/Zgn-Bhr/tome/blob/main/docs/steam-deck-install.md#troubleshooting-verify-on-device">troubleshooting</a>.</p>
+    </div>
+  </section>
+
+  <section id="screens" style="padding-top:8px">
+    <div class="wrap">
+      <h2>What it looks like</h2>
+      <p class="sub">Screenshots at the Deck's 1280×800, with generated test PDFs.</p>
+      <div class="gallery">
+        <figure><img class="shot" src="img/column.jpg" width="1280" height="800" loading="lazy" alt="A two-column paper in Column mode: one column at a time, at a large size."><figcaption>Two-column papers open in Column mode: read down one column, then the next.</figcaption></figure>
+        <figure><img class="shot" src="img/session.jpg" width="1280" height="800" loading="lazy" alt="The Session complete screen with pages read, reading time, XP earned, a streak and unlocked trophies."><figcaption>Every session ends with what you earned: XP, cleared stages, streaks and trophies.</figcaption></figure>
+        <figure><img class="shot" src="img/trophies.jpg" width="1280" height="800" loading="lazy" alt="The Trophies tab: global trophies and per-book trophies, unlocked ones in gold."><figcaption>Trophies for you and for every book.</figcaption></figure>
+        <figure><img class="shot" src="img/search.jpg" width="1280" height="800" loading="lazy" alt="Search with the on-screen keyboard and matching books."><figcaption>Search with the on-screen keyboard. No touch or keyboard needed anywhere.</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:8px">
+    <div class="wrap">
+      <div class="features">
+        <div class="feature"><div class="bar"></div><h3>Built for controllers</h3><p>D-pad, sticks, triggers to zoom, back grips to turn pages. Touch still works.</p></div>
+        <div class="feature"><div class="bar"></div><h3>Papers done right</h3><p>Margins cropped, two-column pages read column by column, scans included.</p></div>
+        <div class="feature"><div class="bar"></div><h3>A light game layer</h3><p>Stages from chapters, XP for pages you really read, streaks and trophies.</p></div>
+        <div class="feature"><div class="bar"></div><h3>Yours, offline</h3><p>Reads PDFs from your folders and SD card. No account, no tracking.</p></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Tome · <a href="https://github.com/Zgn-Bhr/tome/releases">Releases</a> · <a href="https://github.com/Zgn-Bhr/tome">Source</a> · <a href="https://github.com/Zgn-Bhr/tome/issues">Report a problem</a></span>
+    <span>Steam and Steam Deck are trademarks of Valve Corporation. Tome is not affiliated with Valve.</span>
+  </div>
+</footer>
+
+<script>
+  // Copy buttons.
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = document.getElementById(btn.getAttribute('data-copy')).textContent;
+      var done = function () { btn.textContent = 'COPIED'; setTimeout(function () { btn.textContent = 'COPY'; }, 1600); };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
+      else { var r = document.createRange(); r.selectNodeContents(document.getElementById(btn.getAttribute('data-copy'))); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    });
+  });
+  // Show the latest version number (the download link always gets the latest file).
+  fetch('https://api.github.com/repos/Zgn-Bhr/tome/releases/latest')
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) { if (j && j.tag_name) document.getElementById('version').textContent = 'Version ' + j.tag_name.replace(/^v/, ''); })
+    .catch(function () {});
+</script>
+</body>
+</html>

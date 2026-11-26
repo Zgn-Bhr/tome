@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Install or update Tome on a Steam Deck (or any x86_64 Linux) from GitHub.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh | bash
+#   curl -sL https://zgn-bhr.github.io/tome/install | bash
+#
+# (Same script as https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh;
+# the download page at https://zgn-bhr.github.io/tome/ serves a copy.)
 #
 # What it does:
 #   1. Downloads the latest Tome AppImage from GitHub Releases
@@ -32,7 +35,7 @@ while [ $# -gt 0 ]; do
     --version) version="${2:?--version needs a tag, e.g. v0.1.0}"; shift 2 ;;
     --no-steam) add_to_steam=0; shift ;;
     --uninstall) uninstall=1; shift ;;
-    -h|--help) sed -n '2,19p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,21p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done

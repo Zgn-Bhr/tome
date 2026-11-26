@@ -54,10 +54,12 @@ The mouse wheel scrolls (like the left trackpad), dragging pans (like the right 
 
 ## Install on a Steam Deck
 
-In Desktop Mode, open Konsole and run:
+**Download page: https://zgn-bhr.github.io/tome/** has a Download button and point-and-click steps.
+
+Or, in Desktop Mode, open Konsole and run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh | bash
+curl -sL https://zgn-bhr.github.io/tome/install | bash
 ```
 
 This installs the latest release to `~/Applications/Tome.AppImage` and adds it to Steam. Run it again to update. Details, manual steps and troubleshooting are in [docs/steam-deck-install.md](docs/steam-deck-install.md); back-grip and trackpad bindings are in [docs/steam-input-layout.md](docs/steam-input-layout.md).
@@ -85,6 +87,8 @@ gh release create v0.1.0 dist/Tome-x86_64.AppImage --title "Tome v0.1.0" --notes
 | `npm start` | Run the production bundle |
 | `npm run fixtures` | Regenerate `fixtures/pdfs/*.pdf` |
 | `npm run dist:linux` | Steam Deck AppImage |
+
+The download page lives in `site/` and is published by `.github/workflows/pages.yml` on every push that changes it or the install script.
 
 **Smoke driver (dev only):** `TOME_SMOKE=steps.json electron .` runs scripted key presses and saves screenshots of the real window. See [src/platform/smoke.ts](src/platform/smoke.ts) for the format. Other environment variables: `TOME_DATA_DIR` (storage root), `TOME_LIBRARY_DIRS` (`:`-separated folders that replace the configured ones) and `TOME_OPEN_DEVTOOLS`.
 

@@ -4,14 +4,16 @@ Tome runs as a **non-Steam game**. Adding it to Steam needs Desktop Mode **once*
 
 Steps marked **(verify on device)** come from general SteamOS knowledge and haven't been checked on real hardware yet.
 
-## Quick install from GitHub (recommended)
+## Quick install (recommended)
+
+The easiest way is the download page, **https://zgn-bhr.github.io/tome/**: a Download button plus point-and-click steps. Or use the one-line command:
 
 1. On the Deck, switch to **Desktop Mode** (Steam button → Power → Switch to Desktop).
 2. Open **Konsole** (application menu → System → Konsole).
 3. Paste this and press Enter (Ctrl+Shift+V pastes in Konsole):
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh | bash
+   curl -sL https://zgn-bhr.github.io/tome/install | bash
    ```
 
    It downloads the latest release into `~/Applications/Tome.AppImage`, adds a menu entry and, on first install, adds Tome to Steam with SteamOS's `steamos-add-to-steam` (verify on device). If that helper isn't found, it tells you how to add Tome by hand (step 3 below).
@@ -20,16 +22,16 @@ Steps marked **(verify on device)** come from general SteamOS knowledge and have
 **Update** later by running the same command; the Steam shortcut and your progress stay as they are. Other options:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh | bash -s -- --version v0.1.0
+curl -sL https://zgn-bhr.github.io/tome/install | bash -s -- --version v0.1.0
 ```
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh | bash -s -- --uninstall
+curl -sL https://zgn-bhr.github.io/tome/install | bash -s -- --uninstall
 ```
 
 If you'd rather read the script before running it:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/Zgn-Bhr/tome/main/scripts/install-deck.sh
+curl -sL -o install-deck.sh https://zgn-bhr.github.io/tome/install
 ```
 ```bash
 less install-deck.sh
