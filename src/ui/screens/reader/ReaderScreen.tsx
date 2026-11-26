@@ -8,7 +8,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FitMode, PageTheme, ReadingState, Session, Stage } from '../../../core/models';
 import { INPUT, zoomFactor } from '../../../core/input/config';
 import { GAME } from '../../../core/gamification/config';
-import { autoFit, clamp, clampView, fitScale, layout, nextFit, scrollFraction, zoomAbout, type Layout, type Size, type ViewState } from '../../../core/reader/viewport';
+import { autoFit, clamp, clampView, columnRegion, fitScale, layout, nextFit, pageBox, scrollFraction, zoomAbout, type Layout, type Size, type ViewState } from '../../../core/reader/viewport';
+import { boxH, boxW, clampBox, type Box } from '../../../core/layout/box';
+import { cropForPage } from '../../../core/layout/crop';
+import { columnSegments, type Segment } from '../../../core/layout/columns';
 import { stageForPage, stageNumeral } from '../../../core/stages/derive';
 import { GUTTER_PX } from '../../../core/settings';
 import { stageClearXp } from '../../../core/gamification/levels';
@@ -18,10 +21,11 @@ import { wordsOrNull } from '../../../core/gamification/coverage';
 import type { Outcome } from '../../../core/gamification/engine';
 import { readingDayKey, weekdayIndex } from '../../../core/time';
 import { pdfUrl } from '../../../shared/api';
-import { PdfPasswordError, closePdf, openPdf, pageText } from '../../../pdf/document';
+import { PdfPasswordError, closePdf, openPdf } from '../../../pdf/document';
+import { hasText, pageContentBox, readPageInk, readPageText, textColumns, type PageText } from '../../../pdf/layout';
 import { PageRenderer, type Rendered } from '../../../pdf/render';
 import { THEME_BG, drawThemed } from '../../../pdf/themes';
-import { indexWithDoc, markOpened, saveReadingState, saveSession, toggleBookmark, updateSettings } from '../../actions';
+import { indexWithDoc, markOpened, needsLayout, saveReadingState, saveSession, toggleBookmark, updateSettings } from '../../actions';
 import { api } from '../../api';
 import { useInput, useInputApi } from '../../input/InputProvider';
 import { useNav } from '../../nav';
@@ -68,8 +72,19 @@ interface Detail {
   y1: number;
 }
 
+/** Per-page layout facts: size, text, own content box, column segments (§8.5, §8.6). */
+interface PageGeom {
+  size: Size;
+  text: PageText | null;
+  own: Box | null;
+  segments: Segment[] | null;
+}
+
 interface ReaderState {
   renderer: PageRenderer | null;
+  geom: Map<number, PageGeom>;
+  /** Current column segment (Column mode). */
+  seg: number;
   pageCount: number;
   page: number;
   size: Size | null;
@@ -115,6 +130,8 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
 
   const st = useRef<ReaderState>({
     renderer: null,
+    geom: new Map(),
+    seg: 0,
     pageCount: 0,
     page: 1,
     size: null,
@@ -152,27 +169,103 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   const stagesRef = useRef(stages);
   stagesRef.current = stages;
 
-  const gutter = () => (st.fit === 'page' ? 0 : GUTTER_PX[settingsRef.current.gutters]);
+  const gutterFor = (fit: FitMode) => (fit === 'page' ? 0 : GUTTER_PX[settingsRef.current.gutters]);
   const theme = (): PageTheme => st.themeOverride ?? settingsRef.current.pageTheme;
   const pixelRatio = () => scaleRef.current * (window.devicePixelRatio || 1);
-  const currentLayout = (): Layout | null => (st.size ? layout(st.size, VP, st.fit, gutter(), st.v) : null);
   const fitFor = (size: Size): FitMode => (st.fitChosen ? st.fit : autoFit(size, settingsRef.current.defaultFit, !!bookRef.current?.isTwoColumn));
+  /** Column mode needs the page to have columns; otherwise it reads as Width (§8.5). */
+  const fitOn = (n: number, fit: FitMode): FitMode => (fit === 'column' && !st.geom.get(n)?.segments?.length ? 'width' : fit);
+  const effFit = (): FitMode => fitOn(st.page, st.fit);
+  const gutter = () => gutterFor(effFit());
+
+  /** The cropped content box of page `n` (§8.6), or the whole page with Auto-crop off. */
+  const cropOf = (n: number): Box => {
+    const g = st.geom.get(n);
+    const size = g?.size ?? st.size!;
+    if (!settingsRef.current.autoCrop) return pageBox(size);
+    const b = bookRef.current;
+    const crop = b?.cropOdd || b?.cropEven ? { odd: b.cropOdd ?? null, even: b.cropEven ?? null } : null;
+    return cropForPage(g?.own ?? null, crop, n, size.w, size.h);
+  };
+
+  /** The page region shown: a padded column segment in Column mode, else the crop box. */
+  const regionFor = (n: number, seg: number, fit: FitMode): Box => {
+    const g = st.geom.get(n);
+    const segs = g?.segments;
+    if (fit === 'column' && g && segs?.length) {
+      const s = segs[clamp(seg, 0, segs.length - 1)]!;
+      // Left and right columns share one scale so moving between them doesn't zoom.
+      const colW = s.kind === 'band' ? boxW(s.box) : Math.max(...segs.filter((x) => x.kind !== 'band').map((x) => boxW(x.box)));
+      return columnRegion(s.box, g.size, VP, gutterFor('column'), colW);
+    }
+    // Fit page shows the whole page (§8.3); auto-crop applies to width and column.
+    if (fit === 'page' && g) return pageBox(g.size);
+    return cropOf(n);
+  };
+  const regionNow = (): Box | null => (st.size ? regionFor(st.page, st.seg, effFit()) : null);
+  const currentLayout = (): Layout | null => {
+    const r = regionNow();
+    return r ? layout(r, VP, effFit(), gutter(), st.v) : null;
+  };
+
+  /** Size, text, content box and columns for page `n`, cached for the session. */
+  async function geomFor(n: number): Promise<PageGeom> {
+    const known = st.geom.get(n);
+    if (known) return known;
+    const R = st.renderer!;
+    const size = await R.size(n);
+    let text: PageText | null = null;
+    try {
+      text = await readPageText(await R.page(n), n);
+    } catch {
+      text = null;
+    }
+    const own = text && hasText(text) ? pageContentBox(text) : null;
+    let segments: Segment[] | null = null;
+    if (text && hasText(text)) segments = textColumns(text, own ?? pageBox(size));
+    else if (bookRef.current?.isTwoColumn) {
+      // Scans: ink analysis on a small render (§8.5 step 2).
+      try {
+        const ink = await readPageInk(await R.page(n));
+        if (ink.columns) segments = columnSegments(ink.columns, ink.crop ? clampBox(ink.crop, pageBox(size)) : pageBox(size));
+      } catch {
+        segments = null;
+      }
+    }
+    const g: PageGeom = { size, text, own, segments };
+    st.geom.set(n, g);
+    if (st.geom.size > 80) st.geom.delete(st.geom.keys().next().value as number);
+    gameT.setWords(n, text ? wordsOrNull(text.words, text.chars) : null);
+    return g;
+  }
 
   // ── Drawing ─────────────────────────────────────────────────────────────
 
   function applyTransform(): void {
     const L = currentLayout();
+    const R = regionNow();
     const el = pageRef.current;
-    if (!L || !el || !st.drawn) return;
-    const k = L.ds / st.drawn.ds;
+    const base = baseRef.current;
+    if (!L || !R || !el || !base || !st.drawn) return;
+    // The page container clips to the region (crop box or column segment); the
+    // full-page canvas sits inside it, offset by the region's origin.
+    const d = st.drawn.ds;
+    const k = L.ds / d;
+    el.style.width = `${boxW(R) * d}px`;
+    el.style.height = `${boxH(R) * d}px`;
     el.style.transform = `translate3d(${L.x}px, ${L.y}px, 0) scale(${k})`;
+    base.style.left = `${-R.x0 * d}px`;
+    base.style.top = `${-R.y0 * d}px`;
     const det = detailRef.current;
-    if (det) det.style.display = st.detail && st.detail.page === st.page && Math.abs(st.detail.ds - L.ds) < 1e-6 && st.detail.theme === theme() ? 'block' : 'none';
-    if (det && st.detail && det.style.display === 'block') {
-      det.style.left = `${st.detail.x0 / k}px`;
-      det.style.top = `${st.detail.y0 / k}px`;
-      det.style.width = `${(st.detail.x1 - st.detail.x0) / k}px`;
-      det.style.height = `${(st.detail.y1 - st.detail.y0) / k}px`;
+    const showDetail = !!st.detail && st.detail.page === st.page && Math.abs(st.detail.ds - L.ds) < 1e-6 && st.detail.theme === theme();
+    if (det) {
+      det.style.display = showDetail ? 'block' : 'none';
+      if (showDetail && st.detail) {
+        det.style.left = `${st.detail.x0 / k - R.x0 * d}px`;
+        det.style.top = `${st.detail.y0 / k - R.y0 * d}px`;
+        det.style.width = `${(st.detail.x1 - st.detail.x0) / k}px`;
+        det.style.height = `${(st.detail.y1 - st.detail.y0) / k}px`;
+      }
     }
     const thumb = thumbRef.current;
     if (thumb) {
@@ -181,25 +274,25 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       thumb.style.height = `${h}px`;
       thumb.style.transform = `translateY(${top}px)`;
     }
-    // Coverage (§9.2): the part of the page inside the viewport counts as seen.
+    // Coverage (§9.2): the share of the content box (crop) seen so far. In Column
+    // mode the segments together cover it.
     if (st.drawn.page === st.page) {
-      gameT.markView(st.page, {
-        x0: clamp(-L.x / L.pw, 0, 1),
-        x1: clamp((VP.w - L.x) / L.pw, 0, 1),
-        y0: clamp(-L.y / L.ph, 0, 1),
-        y1: clamp((VP.h - L.y) / L.ph, 0, 1),
-      });
+      const crop = cropOf(st.page);
+      const vx0 = Math.max(R.x0, -L.ox / L.ds);
+      const vx1 = Math.min(R.x1, (VP.w - L.ox) / L.ds);
+      const vy0 = Math.max(R.y0, -L.oy / L.ds);
+      const vy1 = Math.min(R.y1, (VP.h - L.oy) / L.ds);
+      const cw = boxW(crop);
+      const ch = boxH(crop);
+      if (vx1 > vx0 && vy1 > vy0 && cw > 0 && ch > 0) {
+        gameT.markView(st.page, {
+          x0: clamp((vx0 - crop.x0) / cw, 0, 1),
+          x1: clamp((vx1 - crop.x0) / cw, 0, 1),
+          y0: clamp((vy0 - crop.y0) / ch, 0, 1),
+          y1: clamp((vy1 - crop.y0) / ch, 0, 1),
+        });
+      }
     }
-  }
-
-  /** Word count for the dwell threshold (§9.2), read from the text layer. */
-  function loadWords(n: number): void {
-    const R = st.renderer;
-    if (!R || gameT.isCounted(n)) return;
-    R.page(n)
-      .then((p) => pageText(p))
-      .then((t) => gameT.setWords(n, wordsOrNull(t.words, t.chars)))
-      .catch(() => gameT.setWords(n, null));
   }
 
   /** Toasts and haptics for game events, by intensity (§9.1, §7.10). */
@@ -249,8 +342,8 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     const ctx = c.getContext('2d', { alpha: false })!;
     ctx.fillStyle = THEME_BG[theme()];
     ctx.fillRect(0, 0, 8, 8);
-    c.style.width = `${L.pw}px`;
-    c.style.height = `${L.ph}px`;
+    c.style.width = `${st.size.w * L.ds}px`;
+    c.style.height = `${st.size.h * L.ds}px`;
     st.drawn = { page: st.page, scale: 0, ds: L.ds, theme: theme() };
     applyTransform();
   }
@@ -308,14 +401,21 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       applyTransform();
       return;
     }
+    // Rectangles in page px at the current scale, limited to the shown region.
+    const Rg = regionNow()!;
+    const rx0 = Rg.x0 * L.ds;
+    const ry0 = Rg.y0 * L.ds;
+    const rx1 = Rg.x1 * L.ds;
+    const ry1 = Rg.y1 * L.ds;
     const mx = VP.w * 0.3;
     const my = VP.h * 0.3;
-    const x0 = clamp(-L.x - mx, 0, L.pw);
-    const y0 = clamp(-L.y - my, 0, L.ph);
-    const x1 = clamp(-L.x + VP.w + mx, 0, L.pw);
-    const y1 = clamp(-L.y + VP.h + my, 0, L.ph);
+    const x0 = clamp(-L.ox - mx, rx0, rx1);
+    const y0 = clamp(-L.oy - my, ry0, ry1);
+    const x1 = clamp(VP.w - L.ox + mx, rx0, rx1);
+    const y1 = clamp(VP.h - L.oy + my, ry0, ry1);
+    if (x1 <= x0 || y1 <= y0) return;
     const d = st.detail;
-    const visible = { x0: clamp(-L.x, 0, L.pw), y0: clamp(-L.y, 0, L.ph), x1: clamp(VP.w - L.x, 0, L.pw), y1: clamp(VP.h - L.y, 0, L.ph) };
+    const visible = { x0: clamp(-L.ox, rx0, rx1), y0: clamp(-L.oy, ry0, ry1), x1: clamp(VP.w - L.ox, rx0, rx1), y1: clamp(VP.h - L.oy, ry0, ry1) };
     if (d && d.page === st.page && Math.abs(d.ds - L.ds) < 1e-6 && d.theme === theme() && d.x0 <= visible.x0 && d.y0 <= visible.y0 && d.x1 >= visible.x1 && d.y1 >= visible.y1) return;
     const token = ++st.tokens.detail;
     const page = st.page;
@@ -350,11 +450,11 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       if (n < 1 || n > st.pageCount || st.page !== from) continue;
       if (performance.now() - st.lastMoveAt < PREFETCH_MS) return schedulePrefetch();
       try {
-        const size = await R.size(n);
-        const fit = fitFor(size);
-        const g = fit === 'page' ? 0 : GUTTER_PX[settingsRef.current.gutters];
-        const ds = fitScale(size, VP, fit, g) * st.v.zoom;
-        await R.render(n, PageRenderer.capScale(size, ds * pixelRatio()));
+        const g = await geomFor(n);
+        const fit = fitOn(n, fitFor(g.size));
+        const region = regionFor(n, n < from ? Number.MAX_SAFE_INTEGER : 0, fit);
+        const ds = fitScale(region, VP, fit, gutterFor(fit)) * st.v.zoom;
+        await R.render(n, PageRenderer.capScale(g.size, ds * pixelRatio()));
       } catch {
         return;
       }
@@ -378,8 +478,9 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   }
 
   function setView(v: ViewState, zoomed = false): void {
-    if (!st.size) return;
-    st.v = clampView(st.size, VP, st.fit, gutter(), v);
+    const r = regionNow();
+    if (!r) return;
+    st.v = clampView(r, VP, effFit(), gutter(), v);
     moved(zoomed);
   }
 
@@ -390,8 +491,9 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   }
 
   function zoomTo(z: number, at = anchor()): void {
-    if (!st.size) return;
-    st.v = zoomAbout(st.size, VP, st.fit, gutter(), st.v, z, at);
+    const r = regionNow();
+    if (!r) return;
+    st.v = zoomAbout(r, VP, effFit(), gutter(), st.v, z, at);
     moved(true);
   }
 
@@ -411,16 +513,19 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     if (!R) return;
     const target = clamp(n, 1, st.pageCount);
     const token = ++st.tokens.nav;
-    const size = await R.size(target);
+    const g = await geomFor(target);
     if (token !== st.tokens.nav) return;
     const changed = target !== st.page;
     st.page = target;
-    st.size = size;
-    st.fit = fitFor(size);
+    st.size = g.size;
+    st.fit = fitFor(g.size);
+    // Column mode lands on the first segment, or the last one when coming back up.
+    const segs = effFit() === 'column' ? g.segments : null;
+    st.seg = land === 'top' || !segs?.length ? 0 : segs.length - 1;
     st.tween = null;
     st.bumpArmed = null;
     st.detail = null;
-    st.v = clampView(size, VP, st.fit, gutter(), { zoom: st.v.zoom, panX: st.v.panX, scrollY: land === 'top' ? 0 : Number.MAX_SAFE_INTEGER });
+    st.v = clampView(regionNow()!, VP, effFit(), gutter(), { zoom: st.v.zoom, panX: st.v.panX, scrollY: land === 'top' ? 0 : Number.MAX_SAFE_INTEGER });
     void ensureRender();
     applyTransform();
     if (changed && dir !== 0 && settingsRef.current.pageTransition === 'slide') {
@@ -430,7 +535,6 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       toast.notePageTurn();
       input.rumble('tick');
       gameT.flush();
-      loadWords(target);
     }
     gameT.reach(target, Date.now());
     persistNow();
@@ -459,6 +563,13 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       return;
     }
     if (repeat) return; // holding the D-pad stops at the edge
+    // Column mode (§8.5): the next press pans to the next segment; after the last
+    // one, the page edge rules apply.
+    const segs = effFit() === 'column' ? st.geom.get(st.page)?.segments : null;
+    if (segs && st.seg + d >= 0 && st.seg + d < segs.length) {
+      changeSegment(st.seg + d, d > 0 ? 'top' : 'bottom', d);
+      return;
+    }
     const next = st.page + d;
     if (st.bumpArmed === d && next >= 1 && next <= st.pageCount) {
       st.bumpArmed = null;
@@ -467,6 +578,28 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     }
     st.bumpArmed = d;
     bump(d);
+  }
+
+  /** Move to another column segment with a 200 ms pan (§8.5, §10.5). */
+  function changeSegment(i: number, land: 'top' | 'bottom', d: -1 | 1): void {
+    const segs = st.geom.get(st.page)?.segments;
+    if (!segs?.[i]) return;
+    const from = segs[st.seg];
+    const to = segs[i]!;
+    st.seg = i;
+    st.tween = null;
+    st.bumpArmed = null;
+    st.detail = null;
+    st.v = clampView(regionNow()!, VP, 'column', gutter(), { zoom: st.v.zoom, panX: 0, scrollY: land === 'top' ? 0 : Number.MAX_SAFE_INTEGER });
+    void ensureRender();
+    applyTransform();
+    // Left → right column slides in sideways; anything else comes from below or above.
+    const sideways = from && from.kind !== 'band' && to.kind !== 'band' && Math.abs(from.box.y0 - to.box.y0) < 1;
+    const dx = sideways ? 80 * d : 0;
+    const dy = sideways ? 0 : 80 * d;
+    animate(slideRef.current, [{ transform: `translate(${dx}px, ${dy}px)`, opacity: 0.4 }, { transform: 'none', opacity: 1 }], 200);
+    input.keepAwake(performance.now() + 260);
+    persistSoon();
   }
 
   function stageJump(d: -1 | 1): void {
@@ -487,16 +620,28 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     if (!st.size) return;
     const L = currentLayout();
     const frac = L ? scrollFraction(L, st.v) : 0;
+    // The page point at the centre of the screen picks the column segment to start in.
+    const cx = L ? (VP.w / 2 - L.ox) / L.ds : 0;
+    const cy = L ? (VP.h / 2 - L.oy) / L.ds : 0;
     st.fit = f;
     st.fitChosen = true;
     st.detail = null;
-    const v = clampView(st.size, VP, f, gutter(), { zoom: 1, panX: 0, scrollY: 0 });
-    const L2 = layout(st.size, VP, f, gutter(), v);
-    st.v = clampView(st.size, VP, f, gutter(), { ...v, scrollY: frac * L2.maxScroll });
+    const segs = st.geom.get(st.page)?.segments;
+    if (f === 'column' && segs?.length) {
+      const hit = segs.findIndex((s) => cy >= s.box.y0 && cy <= s.box.y1 && cx >= s.box.x0 && cx <= s.box.x1);
+      st.seg = hit >= 0 ? hit : Math.max(0, segs.findIndex((s) => cy <= s.box.y1));
+    }
+    const region = regionNow()!;
+    const fit = effFit();
+    const v = clampView(region, VP, fit, gutter(), { zoom: 1, panX: 0, scrollY: 0 });
+    const L2 = layout(region, VP, fit, gutter(), v);
+    st.v = clampView(region, VP, fit, gutter(), { ...v, scrollY: fit === 'column' ? 0 : frac * L2.maxScroll });
     moved(true);
     persistNow();
     rerender();
   }
+
+  const hasColumns = (): boolean => !!st.geom.get(st.page)?.segments?.length;
 
   // ── Persistence and sessions (§8.8, §9.8) ───────────────────────────────
 
@@ -509,6 +654,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       zoom: st.v.zoom,
       fit: st.fit,
       fitChosen: st.fitChosen,
+      ...(effFit() === 'column' ? { segment: st.seg } : {}),
       ...(st.themeOverride ? { themeOverride: st.themeOverride } : {}),
       orientation: 'landscape',
     };
@@ -549,7 +695,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       const ctx = out.getContext('2d')!;
       ctx.fillStyle = C.bgReader;
       ctx.fillRect(0, 0, out.width, out.height);
-      ctx.drawImage(c, L.x / 2, L.y / 2, L.pw / 2, L.ph / 2);
+      ctx.drawImage(c, L.ox / 2, L.oy / 2, (st.size!.w * L.ds) / 2, (st.size!.h * L.ds) / 2);
       return out.toDataURL('image/jpeg', 0.7);
     } catch {
       return undefined;
@@ -611,30 +757,31 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
         st.pageCount = doc.numPages;
         const saved = store.get().states[bookId];
         const start = clamp(jumpTo ?? saved?.page ?? 1, 1, doc.numPages);
-        const size = await renderer.size(start);
+        const g = await geomFor(start);
         if (cancelled) return;
         st.page = start;
-        st.size = size;
+        st.size = g.size;
         st.fitChosen = !!saved?.fitChosen;
         st.fit = saved?.fit ?? 'width';
-        st.fit = fitFor(size);
+        st.fit = fitFor(g.size);
         st.themeOverride = saved?.themeOverride;
-        st.v = clampView(size, VP, st.fit, gutter(), { zoom: saved?.zoom ?? 1, panX: 0, scrollY: 0 });
+        const segs = effFit() === 'column' ? g.segments : null;
+        st.seg = segs?.length && !jumpTo ? clamp(saved?.segment ?? 0, 0, segs.length - 1) : 0;
+        st.v = clampView(regionNow()!, VP, effFit(), gutter(), { zoom: saved?.zoom ?? 1, panX: 0, scrollY: 0 });
         if (saved && !jumpTo) {
-          const L = layout(size, VP, st.fit, gutter(), st.v);
-          st.v = clampView(size, VP, st.fit, gutter(), { ...st.v, scrollY: saved.scrollY * L.maxScroll });
+          const L = layout(regionNow()!, VP, effFit(), gutter(), st.v);
+          st.v = clampView(regionNow()!, VP, effFit(), gutter(), { ...st.v, scrollY: saved.scrollY * L.maxScroll });
         }
         session.startPage = start;
         setStatus({ kind: 'ready' });
         blank();
         void ensureRender();
         persistNow();
-        loadWords(start);
         void gameT.start(doc.numPages, store.get().stages[bookId] ?? []).then(() => {
           if (!cancelled) gameT.reach(st.page, Date.now());
         });
         const b = store.get().books[bookId];
-        if (b && (!b.indexedAt || !b.thumbAt)) indexWithDoc(bookId, doc).catch((e) => console.warn('index in reader failed', e));
+        if (b && (needsLayout(b) || !b.thumbAt)) indexWithDoc(bookId, doc).catch((e) => console.warn('index in reader failed', e));
       } catch (e) {
         if (cancelled) return;
         console.warn('open failed', e);
@@ -704,16 +851,20 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     gameT.setStages(stages);
   }, [stages, gameT]);
 
-  // Settings that change the page: gutters, theme, default fit.
+  // Things that change the page layout: gutters, theme, fit, auto-crop, and a
+  // background re-analysis of this book (crop boxes, two-column).
   useEffect(() => {
     if (!st.size || !st.renderer) return;
     st.fit = fitFor(st.size);
-    st.v = clampView(st.size, VP, st.fit, gutter(), st.v);
+    const segs = st.geom.get(st.page)?.segments;
+    st.seg = segs?.length ? clamp(st.seg, 0, segs.length - 1) : 0;
+    st.v = clampView(regionNow()!, VP, effFit(), gutter(), st.v);
     st.detail = null;
     applyTransform();
     void ensureRender();
+    rerender();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.gutters, settings.pageTheme, settings.defaultFit, stageScale]);
+  }, [settings.gutters, settings.pageTheme, settings.defaultFit, settings.autoCrop, stageScale, book?.cropOdd, book?.cropEven, book?.isTwoColumn]);
 
   // ── Input ───────────────────────────────────────────────────────────────
 
@@ -755,7 +906,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
           case 'tertiary':
             return setOverlay('stagemap');
           case 'view':
-            return setFit(nextFit(st.fit, false));
+            return setFit(nextFit(effFit(), hasColumns()));
           case 'menu':
             return setOverlay('display');
           case 'zoom_reset':
@@ -788,7 +939,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
           changed = true;
         }
         if (a.zoom) {
-          st.v = zoomAbout(st.size, VP, st.fit, gutter(), st.v, st.v.zoom * zoomFactor(a.zoom, dt), anchor());
+          st.v = zoomAbout(regionNow()!, VP, effFit(), gutter(), st.v, st.v.zoom * zoomFactor(a.zoom, dt), anchor());
           zoomed = true;
         }
         if (changed || zoomed) setView(st.v, zoomed);
@@ -860,12 +1011,13 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
                 top: 0,
                 transformOrigin: '0 0',
                 willChange: 'transform',
+                overflow: 'hidden', // clips the page to the crop box or column segment
                 boxShadow: '0 0 60px rgba(0,0,0,0.6)',
                 background: THEME_BG[t],
                 visibility: status.kind === 'ready' ? 'visible' : 'hidden',
               }}
             >
-              <canvas ref={baseRef} style={{ display: 'block' }} />
+              <canvas ref={baseRef} style={{ position: 'absolute', display: 'block' }} />
               <canvas ref={detailRef} style={{ position: 'absolute', display: 'none' }} />
             </div>
           </div>
@@ -901,7 +1053,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
           stages={stages}
           page={st.page}
           pageCount={st.pageCount}
-          fit={st.fit}
+          fit={effFit()}
           zoom={st.v.zoom}
           theme={t}
           bookmarks={bookmarks ?? []}
@@ -916,7 +1068,8 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       {overlay === 'display' ? (
         <DisplaySheet
           theme={t}
-          fit={st.fit}
+          fit={effFit()}
+          hasColumns={hasColumns()}
           bookOnly={st.themeOverride !== undefined}
           onTheme={(th, bookOnly) => {
             if (bookOnly) st.themeOverride = th;

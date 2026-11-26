@@ -4,6 +4,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { Book, BookStats, Bookmark, Collection, PageProgress, ReadingState, Session, Stage, TrophyUnlock, XpEvent } from '../core/models';
 import type { BookMetaUpdate, GameBatch } from '../shared/api';
+import type { Box } from '../core/layout/box';
 import { readingDayKey } from '../core/time';
 
 const SCHEMA = `
@@ -119,8 +120,28 @@ function rowToBook(r: Row): Book {
     ...(num(r.indexed_at) !== undefined ? { indexedAt: num(r.indexed_at)! } : {}),
     ...(num(r.thumb_at) !== undefined ? { thumbAt: num(r.thumb_at)! } : {}),
     fileSize: Number(r.file_size),
+    ...(parseBox(r.crop_odd) ? { cropOdd: parseBox(r.crop_odd)! } : {}),
+    ...(parseBox(r.crop_even) ? { cropEven: parseBox(r.crop_even)! } : {}),
+    ...(num(r.layout_version) !== undefined ? { layoutVersion: num(r.layout_version)! } : {}),
   };
 }
+
+function parseBox(v: unknown): Box | undefined {
+  if (typeof v !== 'string') return undefined;
+  try {
+    const b = JSON.parse(v) as Box;
+    return [b.x0, b.y0, b.x1, b.y1].every((n) => typeof n === 'number' && Number.isFinite(n)) ? b : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Columns added after the first release; ALTER TABLE adds them to older databases. */
+const BOOK_COLUMNS: [string, string][] = [
+  ['crop_odd', 'TEXT'],
+  ['crop_even', 'TEXT'],
+  ['layout_version', 'INTEGER'],
+];
 
 export interface FileRow {
   id: string;
@@ -136,6 +157,8 @@ export class TomeDb {
     this.db = new DatabaseSync(file);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
+    const have = new Set((this.db.prepare('PRAGMA table_info(books)').all() as Row[]).map((r) => String(r.name)));
+    for (const [name, type] of BOOK_COLUMNS) if (!have.has(name)) this.db.exec(`ALTER TABLE books ADD COLUMN ${name} ${type}`);
   }
 
   close(): void {
@@ -185,9 +208,22 @@ export class TomeDb {
       this.db
         .prepare(
           `UPDATE books SET title = ?, author = ?, page_count = ?, kind = ?, has_text_layer = ?,
-           is_two_column = ?, stage_source = ?, indexed_at = ? WHERE id = ?`,
+           is_two_column = ?, stage_source = ?, indexed_at = ?, crop_odd = ?, crop_even = ?, layout_version = ? WHERE id = ?`,
         )
-        .run(m.title, m.author ?? null, m.pageCount, m.kind, m.hasTextLayer ? 1 : 0, m.isTwoColumn ? 1 : 0, m.stageSource, Date.now(), id);
+        .run(
+          m.title,
+          m.author ?? null,
+          m.pageCount,
+          m.kind,
+          m.hasTextLayer ? 1 : 0,
+          m.isTwoColumn ? 1 : 0,
+          m.stageSource,
+          Date.now(),
+          m.cropOdd ? JSON.stringify(m.cropOdd) : null,
+          m.cropEven ? JSON.stringify(m.cropEven) : null,
+          m.layoutVersion,
+          id,
+        );
       this.db.prepare('DELETE FROM stages WHERE book_id = ?').run(id);
       const ins = this.db.prepare(
         'INSERT INTO stages (book_id, idx, label, numeral, start_page, end_page, is_final) VALUES (?, ?, ?, ?, ?, ?, ?)',

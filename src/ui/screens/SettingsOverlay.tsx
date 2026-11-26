@@ -14,17 +14,18 @@ import { MenuList, Scrim, type MenuRow } from '../components/Overlay';
 import { useToast } from '../components/Toast';
 
 type EnumKey = 'pageTheme' | 'gutters' | 'defaultFit' | 'pageTransition' | 'gameIntensity';
-type BoolKey = 'zen' | 'haptics' | 'reduceMotion' | 'debugOverlay' | 'rescanOnLaunch' | 'includeSdCards';
+type BoolKey = 'zen' | 'haptics' | 'reduceMotion' | 'debugOverlay' | 'rescanOnLaunch' | 'includeSdCards' | 'autoCrop';
 
 const ENUMS: Record<EnumKey, { label: string; options: string[] }> = {
   pageTheme: { label: 'Page theme', options: ['paper', 'sepia', 'night', 'dim'] },
   gutters: { label: 'Gutters', options: ['wide', 'narrow', 'none'] },
-  defaultFit: { label: 'Default fit', options: ['auto', 'width', 'page'] },
+  defaultFit: { label: 'Default fit', options: ['auto', 'width', 'page', 'column'] },
   pageTransition: { label: 'Page transition', options: ['slide', 'instant'] },
   gameIntensity: { label: 'Game layer', options: ['full', 'light', 'off'] },
 };
 const BOOLS: Record<BoolKey, string> = {
   zen: 'Zen focus mode (hide counter and line)',
+  autoCrop: 'Auto-crop margins',
   haptics: 'Haptics',
   reduceMotion: 'Reduce motion',
   rescanOnLaunch: 'Rescan on launch',
@@ -39,6 +40,7 @@ const ORDER: (EnumKey | BoolKey | 'folders' | 'rescan' | 'dailyGoal' | 'grips')[
   'rescanOnLaunch',
   'pageTheme',
   'defaultFit',
+  'autoCrop',
   'gutters',
   'pageTransition',
   'zen',

@@ -12,7 +12,7 @@ Stack: **Electron 45 + React 19 + TypeScript + pdf.js 6**, built with electron-v
 | **M1 Reader core**: fit width/page, page turns, scrolling with an edge bump, analog trigger zoom, right-stick and trackpad pan, HUD, Paper/Sepia/Night/Dim themes, position persistence, suspend handling | Done |
 | **M2 Library**: folder scan, SQLite, cover thumbnails, Home, Library grid with filters and sort, Book details, first-run folder picker | Done |
 | **M3 Stages and game layer**: stage derivation, stage map (Book details and reader Y), page counting by dwell and coverage, XP ledger, levels, daily quest, streak, stage and book clears, trophies, toasts, Session complete, Full/Light/Off intensity | Done (the alternative "XP per minute" model is not built) |
-| M4 Papers (auto-crop, column mode, heading stages) | Not started (the paper heuristic and kind badge already work) |
+| **M4 Papers**: auto-crop margins, two-column detection (text layer or ink for scans), Column mode, heading-based stages, the paper heuristic and Library callout | Done |
 | M5 Tate mode, full Settings, Search, Collections, Trophies tab, links | Partly done: **Collections** (your shelves plus smart Papers/Books shelves; add with X, rename or delete with Menu) and the **in-app keyboard** are built, and a first Settings overlay exists. Tate mode, Search, the Trophies tab and links are not started. |
 | M6 Ship on Deck: AppImage, install notes, Steam Input layout, artwork | Build script and docs written; on-device QA still to do |
 
@@ -106,6 +106,11 @@ scripts/      fixture generator, pdf.js asset copy
 - **SQLite via `node:sqlite`, not `better-sqlite3`.** Electron 45 ships Node 24, whose built-in SQLite works in WAL mode. With no native module to compile, the Linux AppImage builds straight from a Mac.
 - **Progress means counted pages.** Gold bars and percentages (covers, Home, Book details) show the share of pages *counted* by the dwell and coverage rule, because gold means earned. Where you are in the book shows as "p. X / N" and as the cyan knob in the HUD. A page you jump to still has to be read to count.
 - **Counting details:** coverage is measured on a 24×24 grid of the page, so zoom and panning count. Dwell builds up in 1-second steps and pauses while an overlay (stage map, Display menu) covers the page. Coverage from an earlier session carries over as a single fraction.
+- **Auto-crop** applies to Width and Column fit. Fit page shows the whole page, as §8.3 says ("the whole page fits"), so slides keep their full design.
+- **Column mode details:** column segments are trimmed to where column text actually is, and bands separated only by white space merge into one. The left and right columns share one scale, so moving between them doesn't zoom. Moving to the next segment slides in over 200 ms (sideways between columns, vertically otherwise). Coverage for page counting is measured against the cropped content box.
+- **Scans:** ink analysis (Otsu threshold, projection profile) runs on a 300 px render. Per page, it's only done for books detected as two-column.
+- **Re-analysis on upgrade:** books indexed by an older version are re-analysed in the background. Their stages are kept when they come from an outline or any stage is already cleared, because clears are tied to stage numbers; otherwise heading stages may replace an even split.
+- **Heading stages** follow the one-page merge rule (§13): a one-page "Abstract" stage merges into the next stage.
 - **Toasts:** several trophies unlocked at the same moment share one toast; pending toasts are dropped when Session complete opens (it lists them all); toasts sit below the HUD's top bar while the HUD is open.
 - **Home "Read again":** when every book is opened and the Continue card would show a cleared book, it says "Cleared · Read again" instead of "Start reading".
 - **Reader D-pad ←/→:** the spec's table reads "D-pad ← / → · Next / previous page". I mapped ← to previous and → to next; the literal order looks like a typo.

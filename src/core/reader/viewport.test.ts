@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { autoFit, clampView, layout, nextFit, scrollFraction, zoomAbout } from './viewport';
+import { autoFit, clampView, columnRegion, layout, nextFit, pageBox, scrollFraction, zoomAbout } from './viewport';
 
 const VP = { w: 1280, h: 800 };
-const A5 = { w: 420, h: 595 }; // portrait book page, points
+const A5_SIZE = { w: 420, h: 595 }; // portrait book page, points
+const A5 = pageBox(A5_SIZE);
 const SLIDE = { w: 960, h: 540 };
 
 describe('reader viewport', () => {
@@ -48,11 +49,29 @@ describe('reader viewport', () => {
 
   it('picks fit page for landscape pages and cycles fits', () => {
     expect(autoFit(SLIDE, 'auto', false)).toBe('page');
-    expect(autoFit(A5, 'auto', false)).toBe('width');
-    expect(autoFit(A5, 'auto', true)).toBe('column');
-    expect(autoFit(A5, 'page', true)).toBe('page');
+    expect(autoFit(A5_SIZE, 'auto', false)).toBe('width');
+    expect(autoFit(A5_SIZE, 'auto', true)).toBe('column');
+    expect(autoFit(A5_SIZE, 'page', true)).toBe('page');
     expect(nextFit('width', false)).toBe('page');
     expect(nextFit('page', false)).toBe('width');
     expect(nextFit('page', true)).toBe('column');
+  });
+
+  it('fills the content area with a cropped region and offsets the page', () => {
+    const crop = { x0: 40, y0: 50, x1: 380, y1: 545 };
+    const l = layout(crop, VP, 'width', 110, { zoom: 1, scrollY: 0, panX: 0 });
+    expect(l.pw).toBeCloseTo(1060);
+    expect(l.x).toBeCloseTo(110);
+    expect(l.ox).toBeCloseTo(110 - 40 * l.ds);
+    expect(l.oy).toBeCloseTo(0 - 50 * l.ds);
+  });
+
+  it('fits a column segment plus 24 px padding into the content area', () => {
+    const seg = { x0: 40, y0: 100, x1: 200, y1: 500 };
+    const r = columnRegion(seg, A5_SIZE, VP, 110);
+    const l = layout(r, VP, 'column', 110, { zoom: 1, scrollY: 0, panX: 0 });
+    expect(l.pw).toBeCloseTo(1060, 0);
+    // The segment itself spans 1060 − 48 px.
+    expect((seg.x1 - seg.x0) * l.ds).toBeCloseTo(1012, 0);
   });
 });

@@ -59,6 +59,18 @@ describe('deriveStages', () => {
     ]);
   });
 
+  it('uses detected headings when there is no usable outline', () => {
+    const headings = [e('Abstract', 1), e('1. Introduction', 2), e('2. Methods', 4), e('References', 7)];
+    const { stages, source } = deriveStages('b', 8, null, headings);
+    expect(source).toBe('headings');
+    // A one-page Abstract stage merges into the next stage (stages of 0–1 pages merge, §13).
+    expect(stages.map((s) => [s.label, s.startPage, s.endPage])).toEqual([
+      ['Introduction', 1, 3],
+      ['Methods', 4, 6],
+      ['References', 7, 8],
+    ]);
+  });
+
   it('splits evenly when there is no outline', () => {
     const { stages, source } = deriveStages('b', 528, null);
     expect(source).toBe('even');

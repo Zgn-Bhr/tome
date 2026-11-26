@@ -1,5 +1,6 @@
 // The typed IPC contract shared by the main process and the renderer.
 
+import type { Box } from '../core/layout/box';
 import type {
   Book,
   BookKind,
@@ -69,6 +70,9 @@ export interface BookMetaUpdate {
   hasTextLayer: boolean;
   isTwoColumn: boolean;
   stageSource: StageSource;
+  cropOdd?: Box;
+  cropEven?: Box;
+  layoutVersion: number;
 }
 
 export interface DirEntry {

@@ -89,6 +89,21 @@ function slidesHtml() {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Harbour Briefing</title><style>${css}</style></head><body>${body}</body></html>`;
 }
 
+/** A "scanned" two-column paper: drawn blocks only, so the PDF has no text layer. */
+function scanHtml() {
+  const css = `
+    @page { size: letter; margin: 0.7in; }
+    body { margin: 0; }
+    .p { break-after: page; height: 9.5in; position: relative; }
+    .band { height: 0.9in; background: repeating-linear-gradient(#333 0 6px, transparent 6px 16px); margin-bottom: 0.3in; }
+    .cols { display: flex; gap: 0.35in; height: 8in; }
+    .col { flex: 1; background: repeating-linear-gradient(#444 0 5px, transparent 5px 13px); }
+  `;
+  let body = '';
+  for (let i = 0; i < 4; i++) body += `<section class="p">${i === 0 ? '<div class="band"></div>' : ''}<div class="cols"><div class="col"></div><div class="col"></div></div></section>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title></title><style>${css}</style></head><body>${body}</body></html>`;
+}
+
 function plainHtml() {
   let body = '';
   for (let k = 0; k < 160; k++) body += para();
@@ -117,6 +132,7 @@ app.whenReady().then(async () => {
     await print(win, paperHtml(), 'tidal-rhythms-paper.pdf', { generateDocumentOutline: false });
     await print(win, slidesHtml(), 'harbour-briefing-slides.pdf', { generateDocumentOutline: false });
     await print(win, plainHtml(), 'untitled_notes.pdf', { generateDocumentOutline: false });
+    await print(win, scanHtml(), 'scanned-two-column.pdf', { generateDocumentOutline: false });
   } catch (e) {
     console.error(e);
     process.exitCode = 1;

@@ -10,13 +10,14 @@ import { useApp } from '../../store';
 import { MenuList, Sheet, type MenuRow } from '../../components/Overlay';
 
 const THEMES: PageTheme[] = ['paper', 'sepia', 'night', 'dim'];
-const FITS: FitMode[] = ['width', 'page'];
+const FITS: FitMode[] = ['width', 'page', 'column'];
 const GUTTERS = ['wide', 'narrow', 'none'] as const;
-const ROWS = ['theme', 'bookOnly', 'fit', 'gutters', 'zen', 'done'] as const;
+const ROWS = ['theme', 'bookOnly', 'fit', 'autoCrop', 'gutters', 'zen', 'done'] as const;
 
 export function DisplaySheet({
   theme,
   fit,
+  hasColumns,
   bookOnly,
   onTheme,
   onBookOnly,
@@ -25,6 +26,8 @@ export function DisplaySheet({
 }: {
   theme: PageTheme;
   fit: FitMode;
+  /** Column fit is offered only when the page has columns (§8.3). */
+  hasColumns: boolean;
   bookOnly: boolean;
   onTheme: (t: PageTheme, bookOnly: boolean) => void;
   onBookOnly: (on: boolean) => void;
@@ -33,6 +36,8 @@ export function DisplaySheet({
 }) {
   const gutters = useApp((s) => s.settings.gutters);
   const zen = useApp((s) => s.settings.zen);
+  const autoCrop = useApp((s) => s.settings.autoCrop);
+  const fits = hasColumns ? FITS : FITS.filter((f) => f !== 'column');
   const graph = useMemo(() => columnGraph(ROWS), []);
   const { focused, navigate } = useFocus('display-sheet', graph, 'theme');
 
@@ -44,7 +49,9 @@ export function DisplaySheet({
       case 'bookOnly':
         return onBookOnly(!bookOnly);
       case 'fit':
-        return onFit(cycle(FITS, fit === 'column' ? 'width' : fit, d));
+        return onFit(cycle(fits, fits.includes(fit) ? fit : 'width', d));
+      case 'autoCrop':
+        return void updateSettings({ autoCrop: !autoCrop });
       case 'gutters':
         return void updateSettings({ gutters: cycle(GUTTERS, gutters, d) });
       case 'zen':
@@ -66,7 +73,8 @@ export function DisplaySheet({
   const rows: MenuRow[] = [
     { id: 'theme', label: 'Page theme', value: theme.toUpperCase(), ...(theme === 'night' ? { hint: 'Inverts figures too — try Dim for figure-heavy PDFs' } : {}) },
     { id: 'bookOnly', label: 'Apply to this book only', value: bookOnly ? 'ON' : 'OFF' },
-    { id: 'fit', label: 'Fit', value: fit.toUpperCase() },
+    { id: 'fit', label: 'Fit', value: fit.toUpperCase(), ...(hasColumns ? { hint: 'Column: read one column at a time' } : {}) },
+    { id: 'autoCrop', label: 'Auto-crop margins', value: autoCrop ? 'ON' : 'OFF' },
     { id: 'gutters', label: 'Gutters', value: gutters.toUpperCase() },
     { id: 'zen', label: 'Zen (hide counter and line)', value: zen ? 'ON' : 'OFF' },
     { id: 'done', label: 'Back to reading' },

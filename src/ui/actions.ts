@@ -1,13 +1,15 @@
 // App-level actions: bootstrap, library scan, background indexing, and the
 // writes that keep the store and the database in step.
 
-import type { Bookmark, Collection, ReadingState, Session, Settings } from '../core/models';
+import type { Book, Bookmark, Collection, ReadingState, Session, Settings } from '../core/models';
 import { cleanName, toggleBook } from '../core/collections';
-import { deriveStages } from '../core/stages/derive';
+import { deriveStages, outlineUsable } from '../core/stages/derive';
+import { ledgerFacts } from '../core/gamification/engine';
+import { LAYOUT_VERSION, analyseBook } from '../pdf/analyse';
 import { guessKind } from '../core/library';
-import { pdfUrl, type GameBatch } from '../shared/api';
+import { pdfUrl, type BookMetaUpdate, type GameBatch } from '../shared/api';
 import { readingDayKey } from '../core/time';
-import { closePdf, openPdf, readMetadata, readOutline, renderCover, sampleText, type PDFDocumentProxy } from '../pdf/document';
+import { closePdf, openPdf, readMetadata, readOutline, renderCover, type PDFDocumentProxy } from '../pdf/document';
 import { api } from './api';
 import { groupBy, store } from './store';
 
@@ -60,7 +62,7 @@ export async function indexPending(): Promise<void> {
   try {
     const todo = () =>
       Object.values(store.get().books)
-        .filter((b) => b.available && (!b.indexedAt || !b.thumbAt))
+        .filter((b) => b.available && (needsLayout(b) || !b.thumbAt))
         .sort((a, b) => b.addedAt - a.addedAt);
     const total = todo().length;
     let done = 0;
@@ -97,28 +99,42 @@ async function indexBook(id: string): Promise<void> {
 }
 
 /** Index a book using an already-open document (the reader calls this). */
+/** Not yet indexed, or indexed by an older layout analysis (§8.5, §8.6). */
+export function needsLayout(b: Book): boolean {
+  return !b.indexedAt || (b.layoutVersion ?? 0) < LAYOUT_VERSION;
+}
+
 export async function indexWithDoc(id: string, doc: PDFDocumentProxy): Promise<void> {
   const book = store.get().books[id];
   if (!book) return;
   {
     let updated = { ...book };
-    if (!book.indexedAt) {
-      const [meta, outline, text] = await Promise.all([readMetadata(doc), readOutline(doc), sampleText(doc)]);
+    if (needsLayout(book)) {
+      const [meta, outline] = await Promise.all([readMetadata(doc), readOutline(doc)]);
       const pageCount = doc.numPages;
-      const { stages, source } = deriveStages(id, pageCount, outline);
-      const isTwoColumn = false; // column detection arrives in M4
-      const m = {
+      const usable = outlineUsable(outline, pageCount);
+      const a = await analyseBook(doc, !usable);
+      // Re-analysing a book (new layout version) keeps stages the reader may have
+      // progress against: cleared stages are tied to stage indices.
+      const s = store.get();
+      const hasClears = (ledgerFacts(s.xpEvents).clearedStages.get(id)?.size ?? 0) > 0;
+      const keep = !!book.indexedAt && (hasClears || book.stageSource === 'outline') && !!s.stages[id]?.length;
+      const derived = keep ? { stages: s.stages[id]!, source: book.stageSource } : deriveStages(id, pageCount, outline, a.headings);
+      const m: BookMetaUpdate = {
         title: meta.title ?? book.title,
-        ...(meta.author ? { author: meta.author } : {}),
+        ...(meta.author ? { author: meta.author } : book.author ? { author: book.author } : {}),
         pageCount,
-        kind: guessKind(pageCount, isTwoColumn, text.hasPaperHeading),
-        hasTextLayer: text.hasTextLayer,
-        isTwoColumn,
-        stageSource: source,
+        kind: guessKind(pageCount, a.isTwoColumn, a.hasPaperHeading),
+        hasTextLayer: a.hasTextLayer,
+        isTwoColumn: a.isTwoColumn,
+        stageSource: derived.source,
+        ...(a.crop?.odd ? { cropOdd: a.crop.odd } : {}),
+        ...(a.crop?.even ? { cropEven: a.crop.even } : {}),
+        layoutVersion: LAYOUT_VERSION,
       };
-      await api.setBookMeta(id, m, stages);
+      await api.setBookMeta(id, m, derived.stages);
       updated = { ...updated, ...m, indexedAt: Date.now() };
-      store.set((s) => ({ books: { ...s.books, [id]: updated }, stages: { ...s.stages, [id]: stages } }));
+      store.set((st) => ({ books: { ...st.books, [id]: updated }, stages: { ...st.stages, [id]: derived.stages } }));
     }
     if (!book.thumbAt) {
       const webp = await renderCover(doc);

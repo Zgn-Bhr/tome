@@ -24,11 +24,19 @@ export function deriveStages(
   bookId: BookId,
   pageCount: number,
   outline: readonly OutlineEntry[] | null,
+  headings: readonly OutlineEntry[] | null = null,
 ): { stages: Stage[]; source: StageSource } {
   if (pageCount < 1) return { stages: [], source: 'even' };
   const fromOutline = outline ? stagesFromOutline(outline, pageCount) : null;
   if (fromOutline) return { stages: finalise(bookId, fromOutline, pageCount), source: 'outline' };
+  const fromHeadings = headings ? stagesFromOutline(headings, pageCount) : null;
+  if (fromHeadings) return { stages: finalise(bookId, fromHeadings, pageCount), source: 'headings' };
   return { stages: finalise(bookId, evenSplit(pageCount), pageCount), source: 'even' };
+}
+
+/** True when an outline yields usable stages (so headings needn't be scanned). */
+export function outlineUsable(outline: readonly OutlineEntry[] | null, pageCount: number): boolean {
+  return !!outline && stagesFromOutline(outline, pageCount) !== null;
 }
 
 /** Returns drafts, or null when the outline isn't usable. */

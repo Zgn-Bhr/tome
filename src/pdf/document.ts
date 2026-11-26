@@ -49,7 +49,7 @@ export async function readMetadata(doc: PDFDocumentProxy): Promise<{ title?: str
     const title = clean(info?.Title);
     const author = clean(info?.Author);
     // Ignore junk titles that are just a filename or a generator default.
-    const usableTitle = title && !/\.(pdf|docx?|tex|indd)$/i.test(title) && !/^(untitled|microsoft word)/i.test(title) ? title : undefined;
+    const usableTitle = title && !/\.(pdf|docx?|tex|indd|html?)$/i.test(title) && !/^(untitled|microsoft word)/i.test(title) ? title : undefined;
     return { ...(usableTitle ? { title: usableTitle } : {}), ...(author ? { author } : {}) };
   } catch {
     return {};

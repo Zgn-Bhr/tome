@@ -1,5 +1,7 @@
 // Data model (spec §4). Pure types, shared by every layer.
 
+import type { Box } from './layout/box';
+
 export type BookId = string; // sha1 of (file size + first 1 MiB)
 
 export type BookKind = 'book' | 'paper';
@@ -26,6 +28,11 @@ export interface Book {
   /** Set once a cover thumbnail exists; used as a cache-buster. */
   thumbAt?: number;
   fileSize: number;
+  /** Median content boxes for odd and even pages (auto-crop, §8.6). */
+  cropOdd?: Box;
+  cropEven?: Box;
+  /** Version of the layout analysis this book was indexed with. */
+  layoutVersion?: number;
 }
 
 export interface Stage {
