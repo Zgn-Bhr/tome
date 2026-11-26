@@ -55,6 +55,25 @@ export function gridGraph(ids: readonly string[], cols: number): FocusGraph {
   return g;
 }
 
+/** Rows of different lengths: left/right within a row, up/down keep the column (clamped). */
+export function rowsGraph(rows: readonly (readonly string[])[]): FocusGraph {
+  const g: FocusGraph = {};
+  const live = rows.filter((r) => r.length > 0);
+  live.forEach((row, r) => {
+    row.forEach((id, c) => {
+      const above = live[r - 1];
+      const below = live[r + 1];
+      g[id] = {
+        ...(c > 0 ? { left: row[c - 1]! } : {}),
+        ...(c < row.length - 1 ? { right: row[c + 1]! } : {}),
+        ...(above ? { up: above[Math.min(c, above.length - 1)]! } : {}),
+        ...(below ? { down: below[Math.min(c, below.length - 1)]! } : {}),
+      };
+    });
+  });
+  return g;
+}
+
 /** Merge graphs; later links override earlier ones per direction. */
 export function mergeGraphs(...graphs: FocusGraph[]): FocusGraph {
   const out: FocusGraph = {};

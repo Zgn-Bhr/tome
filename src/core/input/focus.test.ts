@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gridGraph, link, mergeGraphs, move, rowGraph, serpentineGraph } from './focus';
+import { gridGraph, link, mergeGraphs, move, rowGraph, rowsGraph, serpentineGraph } from './focus';
 
 describe('focus graphs', () => {
   it('links a row left and right without wrapping', () => {
@@ -17,6 +17,13 @@ describe('focus graphs', () => {
     expect(move(g, '6', 'up')).toBe('1');
     expect(move(g, '4', 'right')).toBeNull();
     expect(move(g, '5', 'left')).toBeNull();
+  });
+
+  it('keeps the column between rows of different lengths', () => {
+    const g = rowsGraph([['a0', 'a1', 'a2', 'a3'], [], ['b0', 'b1', 'b2']]);
+    expect(move(g, 'a3', 'down')).toBe('b2');
+    expect(move(g, 'b1', 'up')).toBe('a1');
+    expect(move(g, 'b2', 'right')).toBeNull();
   });
 
   it('merges and links graphs', () => {

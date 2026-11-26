@@ -15,6 +15,7 @@ import { ReaderScreen } from './screens/reader/ReaderScreen';
 import { FolderPicker } from './screens/FolderPicker';
 import { SettingsOverlay } from './screens/SettingsOverlay';
 import { SessionComplete } from './screens/SessionComplete';
+import { SearchScreen } from './screens/SearchScreen';
 
 export function App() {
   const reduceMotion = useApp((s) => s.settings.reduceMotion);
@@ -96,6 +97,7 @@ function Root() {
   else if (top.name === 'library') screen = <LibraryScreen key="library" route={top} />;
   else if (top.name === 'details') screen = <DetailsScreen key={`details-${top.bookId}`} bookId={top.bookId} />;
   else if (top.name === 'session') screen = <SessionComplete key="session" s={top.summary} />;
+  else if (top.name === 'search') screen = <SearchScreen key="search" />;
   else screen = <ReaderScreen key={`reader-${top.bookId}-${stack.length}`} bookId={top.bookId} {...(top.jumpTo ? { jumpTo: top.jumpTo } : {})} />;
 
   return (

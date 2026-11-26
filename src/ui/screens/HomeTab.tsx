@@ -16,7 +16,6 @@ import { Button, PromptBar, type Prompt } from '../components/Glyph';
 import { Bar, Eyebrow, Hex, Ring, SegmentedProgress, WeekDots, stageSegments } from '../components/Game';
 import { Cover } from '../components/Cover';
 import { CalendarCheck, Check, Flame, Trophy } from '../components/Icons';
-import { useToast } from '../components/Toast';
 import type { TabProps } from './LibraryScreen';
 
 const SHELF = 7;
@@ -24,7 +23,6 @@ const SHELF = 7;
 export function HomeTab({ cycleTab, goTab }: TabProps) {
   const views = useBookViews();
   const nav = useNav();
-  const toast = useToast();
   const indexing = useApp((s) => s.indexing);
   const scanning = useApp((s) => s.scanning);
 
@@ -75,7 +73,7 @@ export function HomeTab({ cycleTab, goTab }: TabProps) {
           if (focusedBook) nav.openDetails(focusedBook);
           return;
         case 'tertiary':
-          return toast.show({ kind: 'neutral', eyebrow: 'SEARCH', line: 'Search arrives in a later build' });
+          return nav.push({ name: 'search' });
         case 'view':
           return goTab('library', { openSort: true });
         case 'menu':

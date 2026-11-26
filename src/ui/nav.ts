@@ -8,7 +8,8 @@ export type Route =
   | { name: 'library'; tab: Tab; openSort?: boolean }
   | { name: 'details'; bookId: string }
   | { name: 'reader'; bookId: string; jumpTo?: number }
-  | { name: 'session'; summary: SessionSummary };
+  | { name: 'session'; summary: SessionSummary }
+  | { name: 'search' };
 
 export interface Nav {
   stack: Route[];

@@ -101,7 +101,7 @@ export function CollectionsTab({ cycleTab, goTab }: TabProps) {
             if (bookId) setOverlay({ kind: 'add', bookId });
             return;
           case 'tertiary':
-            return toast.show({ kind: 'neutral', eyebrow: 'SEARCH', line: 'Search arrives in a later build' });
+            return nav.push({ name: 'search' });
           case 'menu':
             if (shelf) return setOverlay({ kind: 'menu', shelf });
             return nav.showSettings();

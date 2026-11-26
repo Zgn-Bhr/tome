@@ -5,7 +5,7 @@ import { useNav, type Route } from '../nav';
 import { C } from '../tokens';
 import { HomeTab } from './HomeTab';
 import { LibraryTab } from './LibraryTab';
-import { PlaceholderTab } from './PlaceholderTab';
+import { TrophiesTab } from './TrophiesTab';
 import { CollectionsTab } from './CollectionsTab';
 
 export interface TabProps {
@@ -39,9 +39,7 @@ export function LibraryScreen({ route }: { route: Extract<Route, { name: 'librar
       {route.tab === 'home' ? <HomeTab {...props} /> : null}
       {route.tab === 'library' ? <LibraryTab key={route.openSort ? 'sort' : 'grid'} {...props} openSort={!!route.openSort} /> : null}
       {route.tab === 'collections' ? <CollectionsTab {...props} /> : null}
-      {route.tab === 'trophies' ? (
-        <PlaceholderTab {...props} title="TROPHIES" body="Trophies unlock once the game layer starts counting pages you've read. The full trophy case arrives in a later build." />
-      ) : null}
+      {route.tab === 'trophies' ? <TrophiesTab {...props} /> : null}
     </div>
   );
 }

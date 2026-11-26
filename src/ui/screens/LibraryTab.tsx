@@ -26,7 +26,6 @@ import { Bar, Eyebrow, SegmentedProgress, StatTile, stageSegments } from '../com
 import { Cover } from '../components/Cover';
 import { TwoColumn } from '../components/Icons';
 import { Dialog, MenuList } from '../components/Overlay';
-import { useToast } from '../components/Toast';
 import type { TabProps } from './LibraryScreen';
 
 const COLS = 5;
@@ -40,7 +39,6 @@ let lastSort: LibrarySort = 'last_read';
 export function LibraryTab({ cycleTab, goTab, openSort }: TabProps & { openSort: boolean }) {
   const views = useBookViews();
   const nav = useNav();
-  const toast = useToast();
   const [filter, setFilter] = useState<LibraryFilter>(lastFilter);
   const [sort, setSort] = useState<LibrarySort>(lastSort);
   const [sortOpen, setSortOpen] = useState(openSort);
@@ -83,7 +81,7 @@ export function LibraryTab({ cycleTab, goTab, openSort }: TabProps & { openSort:
             if (focusedView) nav.openDetails(focusedView.book.id);
             return;
           case 'tertiary':
-            return toast.show({ kind: 'neutral', eyebrow: 'SEARCH', line: 'Search arrives in a later build' });
+            return nav.push({ name: 'search' });
           case 'view':
             return setSortOpen(true);
           case 'menu':
