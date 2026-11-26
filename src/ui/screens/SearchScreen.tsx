@@ -103,10 +103,15 @@ export function SearchScreen() {
     },
     // Typing on a keyboard always edits the query, even from the results row.
     onText: (x) => {
+      // Enter: from the field, jump to the results; on a result, open it.
+      if (typeof x !== 'string' && x.key === 'enter') {
+        if (inKeys) return toResults();
+        if (focusedBook) nav.openBook(focusedBook);
+        return;
+      }
       if (!inKeys) setFocused(lastKey.current);
       if (typeof x === 'string') return t.type(x);
       if (x.key === 'backspace') return t.erase();
-      if (x.key === 'enter') return toResults();
     },
   });
 
