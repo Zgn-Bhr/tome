@@ -12,12 +12,12 @@ import { Scrim } from '../../components/Overlay';
 import { StageMap, geometry } from '../../components/StageMap';
 import { StageCard } from '../DetailsScreen';
 
-const NO_CLEARS = new Set<number>();
-
 export function StageMapOverlay({
   stages,
   page,
   showXp,
+  counted,
+  cleared,
   onJump,
   onGoTo,
   onClose,
@@ -25,6 +25,8 @@ export function StageMapOverlay({
   stages: readonly Stage[];
   page: number;
   showXp: boolean;
+  counted: ReadonlySet<number>;
+  cleared: ReadonlySet<number>;
   onJump: (s: Stage) => void;
   onGoTo: () => void;
   onClose: () => void;
@@ -72,12 +74,14 @@ export function StageMapOverlay({
           <span style={{ fontSize: 13, color: C.textDim }}>{stages.length} stages</span>
         </div>
         {stages.length ? (
-          <StageMap stages={stages} currentIndex={current?.index ?? -1} cleared={NO_CLEARS} focusedIndex={Number(focused)} />
+          <StageMap stages={stages} currentIndex={current?.index ?? -1} cleared={cleared} focusedIndex={Number(focused)} />
         ) : (
           <span style={{ marginTop: 40, fontSize: 14, color: C.textMuted }}>Reading the outline…</span>
         )}
         <div style={{ flex: 1 }} />
-        {focusedStage ? <StageCard stage={focusedStage} isCurrent={focusedStage.index === current?.index} page={page} showXp={showXp} /> : null}
+        {focusedStage ? (
+          <StageCard stage={focusedStage} isCurrent={focusedStage.index === current?.index} counted={counted} showXp={showXp} cleared={cleared.has(focusedStage.index)} />
+        ) : null}
         <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 22 }}>
           <PromptItem p={{ glyphs: ['Dpad'], label: 'Choose stage' }} size={14} gap={9} />
           <PromptItem p={{ glyphs: ['A'], label: 'Jump here' }} size={14} gap={9} />

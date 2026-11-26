@@ -26,14 +26,14 @@ export interface BookView {
   book: Book;
   state?: ReadingState;
   stats?: BookStats;
-  /** 0..1 — position-based until the game layer counts pages (M3). */
+  /** 0..1 share of the book's pages that are counted (§9.2) — earned, so drawn in gold. */
   progress: number;
   cleared: boolean;
 }
 
-export function progressOf(book: Book, state?: ReadingState): number {
-  if (!state || book.pageCount <= 0) return 0;
-  return Math.min(1, state.page / book.pageCount);
+export function progressOf(book: Book, countedPages: number): number {
+  if (book.pageCount <= 0) return 0;
+  return Math.min(1, countedPages / book.pageCount);
 }
 
 export function matchesFilter(v: BookView, f: LibraryFilter): boolean {

@@ -209,7 +209,7 @@ function Node({ stage, g, state, focused }: { stage: Stage; g: Geometry; state: 
       >
         {stage.isFinal ? (
           <span style={{ font: chakra(600, 11), letterSpacing: '0.12em', color: C.gold }}>FINAL STAGE</span>
-        ) : state !== 'future' ? (
+        ) : state !== 'future' && stage.numeral ? (
           <span style={{ font: chakra(600, 11), letterSpacing: '0.12em', color: state === 'current' ? C.cyan : C.textDim }}>{numeral.toUpperCase()}</span>
         ) : null}
         <span className="clamp2" style={{ fontSize: 13, color: labelColor, fontWeight: state === 'current' ? 600 : 400 }}>

@@ -9,17 +9,23 @@ import type { FitMode, PageTheme, ReadingState, Session, Stage } from '../../../
 import { INPUT, zoomFactor } from '../../../core/input/config';
 import { GAME } from '../../../core/gamification/config';
 import { autoFit, clamp, clampView, fitScale, layout, nextFit, scrollFraction, zoomAbout, type Layout, type Size, type ViewState } from '../../../core/reader/viewport';
-import { stageForPage } from '../../../core/stages/derive';
+import { stageForPage, stageNumeral } from '../../../core/stages/derive';
 import { GUTTER_PX } from '../../../core/settings';
+import { stageClearXp } from '../../../core/gamification/levels';
+import { streakInfo, weekDots } from '../../../core/gamification/streak';
+import { BOOK_TROPHIES, GLOBAL_TROPHIES } from '../../../core/gamification/trophies';
+import { wordsOrNull } from '../../../core/gamification/coverage';
+import type { Outcome } from '../../../core/gamification/engine';
+import { readingDayKey, weekdayIndex } from '../../../core/time';
 import { pdfUrl } from '../../../shared/api';
-import { PdfPasswordError, closePdf, openPdf } from '../../../pdf/document';
+import { PdfPasswordError, closePdf, openPdf, pageText } from '../../../pdf/document';
 import { PageRenderer, type Rendered } from '../../../pdf/render';
 import { THEME_BG, drawThemed } from '../../../pdf/themes';
 import { indexWithDoc, markOpened, saveReadingState, saveSession, toggleBookmark, updateSettings } from '../../actions';
 import { api } from '../../api';
 import { useInput, useInputApi } from '../../input/InputProvider';
 import { useNav } from '../../nav';
-import { store, useApp } from '../../store';
+import { store, useApp, useBookGame } from '../../store';
 import { useGame } from '../../game';
 import { C, STAGE_H, STAGE_W, chakra } from '../../tokens';
 import { useStageScale } from '../../components/Scaler';
@@ -30,6 +36,8 @@ import { GoToPage } from '../GoToPage';
 import { ReaderHud } from './ReaderHud';
 import { DisplaySheet } from './DisplaySheet';
 import { StageMapOverlay } from './StageMapOverlay';
+import { ReaderGame } from './readerGame';
+import type { SessionSummary } from '../SessionComplete';
 
 const VP: Size = { w: STAGE_W, h: STAGE_H };
 const SETTLE_MS = 160;
@@ -127,6 +135,12 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
 
   const session = useRef<Session>({ id: crypto.randomUUID(), bookId, startedAt: Date.now(), activeMs: 0, startPage: 1, countedPages: 0 }).current;
   const savedActive = useRef(0);
+  const gameRef = useRef<ReaderGame | null>(null);
+  gameRef.current ??= new ReaderGame(bookId, session.id, (o) => announce(o));
+  const gameT = gameRef.current;
+  const overlayRef = useRef<Overlay>(overlay);
+  overlayRef.current = overlay;
+  const bookGame = useBookGame(bookId);
 
   // Live values for callbacks that outlive a render.
   const settingsRef = useRef(settings);
@@ -167,6 +181,48 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       thumb.style.height = `${h}px`;
       thumb.style.transform = `translateY(${top}px)`;
     }
+    // Coverage (§9.2): the part of the page inside the viewport counts as seen.
+    if (st.drawn.page === st.page) {
+      gameT.markView(st.page, {
+        x0: clamp(-L.x / L.pw, 0, 1),
+        x1: clamp((VP.w - L.x) / L.pw, 0, 1),
+        y0: clamp(-L.y / L.ph, 0, 1),
+        y1: clamp((VP.h - L.y) / L.ph, 0, 1),
+      });
+    }
+  }
+
+  /** Word count for the dwell threshold (§9.2), read from the text layer. */
+  function loadWords(n: number): void {
+    const R = st.renderer;
+    if (!R || gameT.isCounted(n)) return;
+    R.page(n)
+      .then((p) => pageText(p))
+      .then((t) => gameT.setWords(n, wordsOrNull(t.words, t.chars)))
+      .catch(() => gameT.setWords(n, null));
+  }
+
+  /** Toasts and haptics for game events, by intensity (§9.1, §7.10). */
+  function announce(o: Outcome): void {
+    rerender();
+    const mode = settingsRef.current.gameIntensity;
+    if (mode === 'off') return;
+    const full = mode === 'full';
+    for (const s of o.stagesCleared) {
+      const len = s.endPage - s.startPage + 1;
+      toast.show({ kind: 'gold', eyebrow: `STAGE CLEAR · ${stageNumeral(s).toUpperCase()}`, line: s.label, ...(full ? { value: `+${stageClearXp(len)} XP` } : {}) });
+      input.rumble('double');
+    }
+    if (o.bookCleared) toast.show({ kind: 'gold', eyebrow: 'BOOK CLEAR', line: bookRef.current?.title ?? '', ...(full ? { value: '+500 XP' } : {}) });
+    if (!full) return;
+    if (o.questDone) toast.show({ kind: 'gold', eyebrow: 'DAILY QUEST', line: `${settingsRef.current.dailyGoal} pages today`, value: '+50 XP' });
+    if (o.trophies.length) {
+      // Unlocks that land together share one toast.
+      const names = o.trophies.map((t) => [...GLOBAL_TROPHIES, ...BOOK_TROPHIES].find((d) => d.id === t.trophyId)?.name ?? t.trophyId);
+      const line = names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2}` : names.join(', ');
+      toast.show({ kind: 'gold', eyebrow: names.length > 1 ? `${names.length} TROPHIES UNLOCKED` : 'TROPHY UNLOCKED', line });
+    }
+    if (o.levelUp) toast.show({ kind: 'gold', eyebrow: 'LEVEL UP', line: `Level ${o.levelUp}` });
   }
 
   function draw(r: Rendered, t: PageTheme): void {
@@ -373,7 +429,10 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     if (changed) {
       toast.notePageTurn();
       input.rumble('tick');
+      gameT.flush();
+      loadWords(target);
     }
+    gameT.reach(target, Date.now());
     persistNow();
     rerender();
   }
@@ -471,16 +530,70 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   }
 
   function saveSessionNow(end: boolean): void {
+    session.countedPages = gameT.totals.pages;
     if (session.activeMs <= 0) return;
     const s: Session = { ...session, endPage: st.page, ...(end ? { endedAt: Date.now() } : {}) };
     saveSession(s, savedActive.current);
     savedActive.current = session.activeMs;
   }
 
+  /** The visible page at half size, for Session complete's blurred background. */
+  function snapshot(): string | undefined {
+    const c = baseRef.current;
+    const L = currentLayout();
+    if (!c || !L || !st.drawn || st.drawn.scale === 0) return undefined;
+    try {
+      const out = document.createElement('canvas');
+      out.width = VP.w / 2;
+      out.height = VP.h / 2;
+      const ctx = out.getContext('2d')!;
+      ctx.fillStyle = C.bgReader;
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.drawImage(c, L.x / 2, L.y / 2, L.pw / 2, L.ph / 2);
+      return out.toDataURL('image/jpeg', 0.7);
+    } catch {
+      return undefined;
+    }
+  }
+
+  function summary(): SessionSummary {
+    const s = store.get();
+    const today = readingDayKey(Date.now());
+    const pagesToday = s.pagesByDay.get(today) ?? 0;
+    const qualifiedNow = gameT.pagesTodayBefore < GAME.streakMinPages && pagesToday >= GAME.streakMinPages;
+    const bg = snapshot();
+    const t = gameT.totals;
+    return {
+      bookId,
+      title: bookRef.current?.title ?? '',
+      startPage: session.startPage,
+      endPage: st.page,
+      pages: t.pages,
+      activeMs: session.activeMs,
+      xp: t.xp,
+      trophies: t.trophies,
+      stageClears: t.stageClears,
+      bookCleared: t.bookCleared,
+      questDone: t.questDone,
+      dailyGoal: s.settings.dailyGoal,
+      xpBefore: gameT.xpBefore,
+      streak: streakInfo(s.pagesByDay, today),
+      week: weekDots(s.pagesByDay, today),
+      qualifiedToday: qualifiedNow ? weekdayIndex(today) : null,
+      ...(bg ? { background: bg } : {}),
+    };
+  }
+
+  /** B: save and leave; Session complete if anything was counted or earned (§5). */
   function leave(): void {
+    gameT.flush();
     persistNow();
     saveSessionNow(true);
-    nav.pop();
+    const t = gameT.totals;
+    if (settingsRef.current.gameIntensity !== 'off' && (t.pages > 0 || t.xp.length > 0)) {
+      toast.clear(); // the summary lists everything the queued toasts would say
+      nav.replace({ name: 'session', summary: summary() });
+    } else nav.pop();
   }
 
   // ── Open the document ───────────────────────────────────────────────────
@@ -516,6 +629,10 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
         blank();
         void ensureRender();
         persistNow();
+        loadWords(start);
+        void gameT.start(doc.numPages, store.get().stages[bookId] ?? []).then(() => {
+          if (!cancelled) gameT.reach(st.page, Date.now());
+        });
         const b = store.get().books[bookId];
         if (b && (!b.indexedAt || !b.thumbAt)) indexWithDoc(bookId, doc).catch((e) => console.warn('index in reader failed', e));
       } catch (e) {
@@ -532,6 +649,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       cancelled = true;
       for (const t of Object.values(st.timers)) clearTimeout(t);
       if (st.renderer === renderer && renderer) {
+        gameT.flush();
         persistNow();
         saveSessionNow(true);
         st.renderer = null;
@@ -546,8 +664,14 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   useEffect(() => {
     let n = 0;
     const t = setInterval(() => {
-      if (!document.hidden && document.hasFocus() && performance.now() - input.lastInputAt() < GAME.idleCapMs) session.activeMs += 1000;
+      const active = !document.hidden && document.hasFocus() && performance.now() - input.lastInputAt() < GAME.idleCapMs;
+      if (active) {
+        session.activeMs += 1000;
+        // Dwell (§9.2): only while the page is actually on screen, not under an overlay.
+        if (st.renderer && overlayRef.current === null) gameT.tick(st.page, 1000, Date.now());
+      }
       if (++n % 10 === 0) {
+        gameT.flush();
         persistNow();
         saveSessionNow(false);
       }
@@ -555,6 +679,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     }, 1000);
     const off = api.onPower((e) => {
       if (e === 'suspend') {
+        gameT.flush();
         persistNow();
         saveSessionNow(false);
       }
@@ -567,6 +692,17 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   }, []);
   const hudRef = useRef(hud);
   hudRef.current = hud;
+
+  // Toasts move below the HUD's top bar so they don't cover its chips.
+  useEffect(() => {
+    toast.setOffset(hud ? 72 : 0);
+    return () => toast.setOffset(0);
+  }, [hud, toast]);
+
+  // Stages can arrive after opening (first-time indexing).
+  useEffect(() => {
+    gameT.setStages(stages);
+  }, [stages, gameT]);
 
   // Settings that change the page: gutters, theme, default fit.
   useEffect(() => {
@@ -770,7 +906,10 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
           theme={t}
           bookmarks={bookmarks ?? []}
           sessionMs={session.activeMs}
-          showXp={game.showXp}
+          intensity={game.intensity}
+          sessionPages={gameT.totals.pages}
+          sessionXp={gameT.totals.xp.reduce((a, e) => a + e.amount, 0)}
+          cleared={bookGame.clearedStages}
         />
       ) : null}
 
@@ -804,6 +943,8 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
           stages={stages}
           page={st.page}
           showXp={game.showXp}
+          counted={bookGame.counted}
+          cleared={bookGame.clearedStages}
           onJump={(s) => {
             setOverlay(null);
             const cur = stageForPage(stages, st.page);

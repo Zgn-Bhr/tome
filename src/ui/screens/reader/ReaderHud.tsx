@@ -2,7 +2,7 @@
 // working underneath. Stage segments here are proportional to page count
 // (they read as position), unlike Home's equal segments.
 
-import type { Book, Bookmark, FitMode, PageTheme, Stage } from '../../../core/models';
+import type { Book, Bookmark, FitMode, GameIntensity, PageTheme, Stage } from '../../../core/models';
 import { stageForPage, stageTitle } from '../../../core/stages/derive';
 import { formatClock } from '../../../core/time';
 import { C, PAGE_THEMES, chakra } from '../../tokens';
@@ -20,6 +20,10 @@ export function ReaderHud({
   theme,
   bookmarks,
   sessionMs,
+  intensity,
+  sessionPages,
+  sessionXp,
+  cleared,
 }: {
   book: Book;
   stages: readonly Stage[];
@@ -30,7 +34,10 @@ export function ReaderHud({
   theme: PageTheme;
   bookmarks: readonly Bookmark[];
   sessionMs: number;
-  showXp: boolean;
+  intensity: GameIntensity;
+  sessionPages: number;
+  sessionXp: number;
+  cleared: ReadonlySet<number>;
 }) {
   const stage = stageForPage(stages, page);
   const pct = pageCount ? page / pageCount : 0;
@@ -74,6 +81,8 @@ export function ReaderHud({
             <Clock />
             {formatClock(sessionMs)}
           </span>
+          {intensity !== 'off' ? <span style={chip}>+{sessionPages} {sessionPages === 1 ? 'PAGE' : 'PAGES'}</span> : null}
+          {intensity === 'full' ? <span style={{ ...chip, background: C.goldSurface, border: `1px solid ${C.goldBorder}`, color: C.gold, font: chakra(700, 14) }}>+{sessionXp} XP</span> : null}
         </div>
       </header>
 
@@ -103,8 +112,13 @@ export function ReaderHud({
               {stages.length ? (
                 stages.map((s) => {
                   const len = s.endPage - s.startPage + 1;
-                  const state: SegmentState =
-                    page >= s.startPage && page <= s.endPage ? { kind: 'current', fraction: Math.max(0.04, (page - s.startPage + 1) / len) } : s.isFinal ? { kind: 'final' } : { kind: 'future' };
+                  const state: SegmentState = cleared.has(s.index)
+                    ? { kind: 'cleared' }
+                    : page >= s.startPage && page <= s.endPage
+                      ? { kind: 'current', fraction: Math.max(0.04, (page - s.startPage + 1) / len) }
+                      : s.isFinal
+                        ? { kind: 'final' }
+                        : { kind: 'future' };
                   return <Segment key={s.index} s={state} height={8} radius={2} flex={len} />;
                 })
               ) : (

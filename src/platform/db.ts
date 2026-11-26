@@ -2,8 +2,8 @@
 // in WAL mode so nothing is lost across suspend or a hard power-off (§12).
 
 import { DatabaseSync } from 'node:sqlite';
-import type { Book, BookStats, Bookmark, ReadingState, Session, Stage, XpEvent } from '../core/models';
-import type { BookMetaUpdate } from '../shared/api';
+import type { Book, BookStats, Bookmark, PageProgress, ReadingState, Session, Stage, TrophyUnlock, XpEvent } from '../core/models';
+import type { BookMetaUpdate, GameBatch } from '../shared/api';
 import { readingDayKey } from '../core/time';
 
 const SCHEMA = `
@@ -290,7 +290,65 @@ export class TomeDb {
     }));
   }
 
-  // ── Game layer (ledger reads; writes arrive with M3) ──────────────────
+  // ── Game layer ────────────────────────────────────────────────────────
+
+  pageProgress(bookId: string): PageProgress[] {
+    return (this.db.prepare('SELECT * FROM page_progress WHERE book_id = ? ORDER BY page').all(bookId) as Row[]).map((r) => ({
+      bookId: String(r.book_id),
+      page: Number(r.page),
+      dwellMs: Number(r.dwell_ms),
+      viewedFraction: Number(r.viewed_fraction),
+      counted: Number(r.counted) === 1,
+      ...(num(r.counted_at) !== undefined ? { countedAt: num(r.counted_at)! } : {}),
+    }));
+  }
+
+  /** Counted pages per book (for progress bars and per-stage counts). */
+  countedPages(): [string, number[]][] {
+    const rows = this.db.prepare('SELECT book_id, page FROM page_progress WHERE counted = 1 ORDER BY book_id, page').all() as Row[];
+    const map = new Map<string, number[]>();
+    for (const r of rows) {
+      const id = String(r.book_id);
+      const list = map.get(id) ?? [];
+      list.push(Number(r.page));
+      map.set(id, list);
+    }
+    return [...map.entries()];
+  }
+
+  trophyUnlocks(): TrophyUnlock[] {
+    return (this.db.prepare('SELECT * FROM trophy_unlocks ORDER BY at').all() as Row[]).map((r) => ({
+      trophyId: String(r.trophy_id),
+      ...(str(r.book_id) ? { bookId: str(r.book_id)! } : {}),
+      at: Number(r.at),
+    }));
+  }
+
+  bestSessionPages(): number {
+    const r = this.db.prepare('SELECT MAX(counted_pages) AS m FROM sessions').get() as Row | undefined;
+    return Number(r?.m ?? 0);
+  }
+
+  /** Page progress, new XP events and trophy unlocks, in one transaction. */
+  recordGame(b: GameBatch): void {
+    const prog = this.db.prepare(
+      `INSERT INTO page_progress (book_id, page, dwell_ms, viewed_fraction, counted, counted_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(book_id, page) DO UPDATE SET
+         dwell_ms = MAX(page_progress.dwell_ms, excluded.dwell_ms),
+         viewed_fraction = MAX(page_progress.viewed_fraction, excluded.viewed_fraction),
+         counted = MAX(page_progress.counted, excluded.counted),
+         counted_at = COALESCE(page_progress.counted_at, excluded.counted_at)`,
+    );
+    const xp = this.db.prepare(
+      'INSERT OR IGNORE INTO xp_events (id, at, amount, reason, book_id, stage_index, page, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+    const trophy = this.db.prepare('INSERT OR IGNORE INTO trophy_unlocks (trophy_id, book_id, at) VALUES (?, ?, ?)');
+    this.tx(() => {
+      for (const p of b.progress) prog.run(p.bookId, p.page, Math.round(p.dwellMs), p.viewedFraction, p.counted ? 1 : 0, p.countedAt ?? null);
+      for (const e of b.xp) xp.run(e.id, e.at, e.amount, e.reason, e.bookId ?? null, e.stageIndex ?? null, e.page ?? null, e.sessionId ?? null);
+      for (const t of b.trophies) trophy.run(t.trophyId, t.bookId ?? '', t.at);
+    });
+  }
 
   xpEvents(): XpEvent[] {
     return (this.db.prepare('SELECT * FROM xp_events ORDER BY at').all() as Row[]).map((r) => ({

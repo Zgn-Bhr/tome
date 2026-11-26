@@ -4,13 +4,14 @@ import { useMemo, useState } from 'react';
 import type { Stage } from '../../core/models';
 import { serpentineGraph } from '../../core/input/focus';
 import { stageClearXp } from '../../core/gamification/levels';
-import { BOOK_TROPHIES } from '../../core/gamification/trophies';
+import { BOOK_TROPHIES, type BookSnapshot } from '../../core/gamification/trophies';
+import { trophyKey } from '../../core/gamification/engine';
 import { stageForPage, stageNumeral } from '../../core/stages/derive';
 import { formatDuration } from '../../core/time';
 import { useInput } from '../input/InputProvider';
 import { useFocus } from '../focus/useFocus';
 import { useNav } from '../nav';
-import { useApp } from '../store';
+import { useApp, useBookGame } from '../store';
 import { useGame } from '../game';
 import { C, chakra } from '../tokens';
 import { BreadcrumbHeader } from '../components/Header';
@@ -23,7 +24,24 @@ import { GoToPage } from './GoToPage';
 import { BookmarksOverlay } from './BookmarksOverlay';
 
 const EMPTY: Stage[] = [];
-const NO_CLEARS = new Set<number>(); // stage clearing arrives with the game layer (M3)
+
+/** Seconds per counted page: this book's once it has 10, else across all books (§7.3). */
+function usePace(bookId: string): number | null {
+  const stats = useApp((s) => s.stats);
+  const counted = useApp((s) => s.counted);
+  return useMemo(() => {
+    const own = counted[bookId]?.size ?? 0;
+    if (own >= 10 && stats[bookId]) return stats[bookId]!.activeMs / 1000 / own;
+    let ms = 0;
+    let pages = 0;
+    for (const [id, set] of Object.entries(counted)) {
+      if (!set.size || !stats[id]) continue;
+      ms += stats[id]!.activeMs;
+      pages += set.size;
+    }
+    return pages >= 3 ? ms / 1000 / pages : null;
+  }, [bookId, stats, counted]);
+}
 
 export function DetailsScreen({ bookId }: { bookId: string }) {
   const nav = useNav();
@@ -33,6 +51,8 @@ export function DetailsScreen({ bookId }: { bookId: string }) {
   const stats = useApp((s) => s.stats[bookId]);
   const bookmarks = useApp((s) => s.bookmarks[bookId]);
   const game = useGame();
+  const bookGame = useBookGame(bookId);
+  const pace = usePace(bookId);
   const [overlay, setOverlay] = useState<null | 'goto' | 'bookmarks'>(null);
 
   const opened = book?.lastOpenedAt !== undefined;
@@ -79,9 +99,11 @@ export function DetailsScreen({ bookId }: { bookId: string }) {
 
   if (!book) return null;
 
-  const pct = book.pageCount ? Math.round(((opened ? page : 0) / book.pageCount) * 100) : 0;
-  const secPerPage = stats && opened && page > 1 ? stats.activeMs / 1000 / (page - 1) : null;
-  const left = secPerPage && stats && stats.activeMs > 60_000 ? `~${formatDuration((book.pageCount - page) * secPerPage * 1000, 'short')}` : '—';
+  // Gold = earned: the percent of pages counted (§7.3), not the reading position.
+  const countedN = bookGame.counted.size;
+  const pct = book.pageCount ? Math.floor((countedN / book.pageCount) * 100) : 0;
+  const remaining = Math.max(0, book.pageCount - countedN);
+  const left = pace !== null && remaining > 0 ? `~${formatDuration(Math.max(60_000, remaining * pace * 1000), 'short')}` : remaining === 0 && book.pageCount ? 'done' : '—';
   const sourceNote =
     book.stageSource === 'outline' ? "from the PDF's outline" : book.stageSource === 'headings' ? 'from detected section headings' : 'split evenly — no outline found';
 
@@ -121,7 +143,13 @@ export function DetailsScreen({ bookId }: { bookId: string }) {
               </div>
             ))}
           </div>
-          {game.showXp ? <BookTrophies stageCount={stages.length} pageCount={book.pageCount} /> : null}
+          {game.showXp ? (
+            <BookTrophies
+              bookId={bookId}
+              unlocked={game.unlocked}
+              snap={{ pageCount: book.pageCount, countedPages: countedN, stageCount: stages.length, firstStageCleared: bookGame.clearedStages.has(0), cleared: bookGame.cleared }}
+            />
+          ) : null}
         </aside>
 
         <section aria-label="Stage map" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -129,9 +157,17 @@ export function DetailsScreen({ bookId }: { bookId: string }) {
             <h2 style={{ margin: 0, font: chakra(600, 18), letterSpacing: '0.08em' }}>STAGE MAP</h2>
             <span style={{ fontSize: 13, color: C.textDim }}>{stages.length ? `${stages.length} stages · ${sourceNote}` : 'Reading the outline…'}</span>
           </div>
-          {stages.length ? <StageMap stages={stages} currentIndex={current?.index ?? -1} cleared={NO_CLEARS} focusedIndex={Number(focused)} /> : <div style={{ height: 434 }} />}
+          {stages.length ? <StageMap stages={stages} currentIndex={current?.index ?? -1} cleared={bookGame.clearedStages} focusedIndex={Number(focused)} /> : <div style={{ height: 434 }} />}
           <div style={{ flex: 1 }} />
-          {focusedStage ? <StageCard stage={focusedStage} isCurrent={focusedStage.index === current?.index} page={page} showXp={game.showXp} /> : null}
+          {focusedStage ? (
+            <StageCard
+              stage={focusedStage}
+              isCurrent={focusedStage.index === current?.index}
+              counted={bookGame.counted}
+              showXp={game.showXp}
+              cleared={bookGame.clearedStages.has(focusedStage.index)}
+            />
+          ) : null}
         </section>
       </main>
       <PromptBar
@@ -169,11 +205,23 @@ export function DetailsScreen({ bookId }: { bookId: string }) {
   );
 }
 
-export function StageCard({ stage, isCurrent, page, showXp, cleared = false }: { stage: Stage; isCurrent: boolean; page: number; showXp: boolean; cleared?: boolean }) {
+export function StageCard({
+  stage,
+  isCurrent,
+  counted,
+  showXp,
+  cleared = false,
+}: {
+  stage: Stage;
+  isCurrent: boolean;
+  counted: ReadonlySet<number>;
+  showXp: boolean;
+  cleared?: boolean;
+}) {
   const len = stage.endPage - stage.startPage + 1;
-  // Position within the stage until the game layer counts pages (M3).
-  const at = isCurrent ? Math.max(1, Math.min(len, page - stage.startPage + 1)) : 0;
-  const status = cleared ? 'CLEARED' : isCurrent ? 'IN PROGRESS' : 'NOT STARTED';
+  let at = 0;
+  for (let p = stage.startPage; p <= stage.endPage; p++) if (counted.has(p)) at++;
+  const status = cleared ? 'CLEARED' : isCurrent || at > 0 ? 'IN PROGRESS' : 'NOT STARTED';
   const statusColor = cleared ? C.gold : isCurrent ? C.cyan : C.textMuted;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '18px 22px', borderRadius: 18, background: C.surface1, border: `1px solid ${C.line3}` }}>
@@ -203,17 +251,19 @@ export function StageCard({ stage, isCurrent, page, showXp, cleared = false }: {
             )
           ) : null}
         </div>
-        <Bar fraction={at / len} color={C.cyan} height={8} />
+        <Bar fraction={at / len} color={cleared ? C.gold : C.cyan} height={8} />
       </div>
       <Button glyph="A" label="JUMP HERE" size={15} />
     </div>
   );
 }
 
-function BookTrophies({ stageCount, pageCount }: { stageCount: number; pageCount: number }) {
-  // Book progress for trophies comes from counted pages (M3); a fresh book until then.
-  const snap = { pageCount, countedPages: 0, stageCount, firstStageCleared: false, cleared: false };
-  const rows = BOOK_TROPHIES.map((t) => ({ t, p: t.progress(snap) }));
+function BookTrophies({ bookId, unlocked: keys, snap }: { bookId: string; unlocked: ReadonlySet<string>; snap: BookSnapshot }) {
+  const rows = BOOK_TROPHIES.map((t) => {
+    const p = t.progress(snap);
+    // An unlock is permanent even if the book's stages are re-derived later.
+    return { t, p: keys.has(trophyKey(t.id, bookId)) ? { current: p.target, target: p.target } : p };
+  });
   const unlocked = rows.filter((r) => r.p.current >= r.p.target).length;
   return (
     <section aria-label="Book trophies" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

@@ -16,9 +16,13 @@ interface ToastApi {
   show(t: ToastSpec): void;
   /** Call on every page turn; toasts wait 1.5 s after the last one. */
   notePageTurn(): void;
+  /** Drop the queue and the toast on screen (e.g. Session complete lists them all). */
+  clear(): void;
+  /** Push the toast slot down, e.g. below the reader HUD's top bar. */
+  setOffset(px: number): void;
 }
 
-const Ctx = createContext<ToastApi>({ show: () => {}, notePageTurn: () => {} });
+const Ctx = createContext<ToastApi>({ show: () => {}, notePageTurn: () => {}, clear: () => {}, setOffset: () => {} });
 
 const HOLD_MS = 4000;
 const OUT_MS = 200;
@@ -28,24 +32,29 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const queue = useRef<ToastSpec[]>([]);
   const lastTurn = useRef(0);
   const [current, setCurrent] = useState<{ t: ToastSpec; leaving: boolean; key: number } | null>(null);
-  const busy = useRef(false);
+  const [offset, setOffset] = useState(0);
+  /** Key of the toast on screen; 0 when none. Stale timers compare against it. */
+  const active = useRef(0);
   const keyRef = useRef(0);
 
   const pump = useCallback(() => {
-    if (busy.current || queue.current.length === 0) return;
+    if (active.current !== 0 || queue.current.length === 0) return;
     const wait = lastTurn.current + QUIET_AFTER_TURN_MS - performance.now();
     if (wait > 0) {
       setTimeout(pump, wait + 10);
       return;
     }
-    busy.current = true;
     const t = queue.current.shift()!;
     const key = ++keyRef.current;
+    active.current = key;
     setCurrent({ t, leaving: false, key });
-    setTimeout(() => setCurrent((c) => (c && c.key === key ? { ...c, leaving: true } : c)), HOLD_MS);
     setTimeout(() => {
-      setCurrent((c) => (c && c.key === key ? null : c));
-      busy.current = false;
+      if (active.current === key) setCurrent((c) => (c && c.key === key ? { ...c, leaving: true } : c));
+    }, HOLD_MS);
+    setTimeout(() => {
+      if (active.current !== key) return;
+      active.current = 0;
+      setCurrent(null);
       pump();
     }, HOLD_MS + OUT_MS);
   }, []);
@@ -60,12 +69,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     notePageTurn: () => {
       lastTurn.current = performance.now();
     },
+    clear: () => {
+      queue.current = [];
+      active.current = 0;
+      setCurrent(null);
+    },
+    setOffset,
   });
 
   return (
     <Ctx.Provider value={api.current}>
       {children}
-      {current ? <ToastView key={current.key} t={current.t} leaving={current.leaving} /> : null}
+      {current ? <ToastView key={current.key} t={current.t} leaving={current.leaving} top={24 + offset} /> : null}
     </Ctx.Provider>
   );
 }
@@ -74,14 +89,15 @@ export function useToast(): ToastApi {
   return useContext(Ctx);
 }
 
-function ToastView({ t, leaving }: { t: ToastSpec; leaving: boolean }) {
+function ToastView({ t, leaving, top }: { t: ToastSpec; leaving: boolean; top: number }) {
   const gold = t.kind === 'gold';
   return (
     <div
       role="status"
       style={{
         position: 'absolute',
-        top: 24,
+        top,
+        transition: 'top 150ms ease-out',
         right: 24,
         width: 370,
         zIndex: 100,

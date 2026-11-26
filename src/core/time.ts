@@ -40,6 +40,7 @@ export function formatDuration(ms: number, style: 'long' | 'short' = 'long'): st
   const totalMin = Math.floor(ms / 60000);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
+  if (ms > 0 && totalMin === 0) return style === 'short' ? '<1m' : '<1 m';
   if (style === 'short') {
     if (h > 0) return `${h}h${m > 0 ? ` ${m}m` : ''}`;
     return `${m}m`;

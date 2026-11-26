@@ -11,7 +11,7 @@ Stack: **Electron 45 + React 19 + TypeScript + pdf.js 6**, built with electron-v
 | **M0 Shell**: fullscreen and docked scaling, tokens, glyphs, prompt bar, buttons, gamepad input with keyboard fallback, focus engine, debug overlay | Done |
 | **M1 Reader core**: fit width/page, page turns, scrolling with an edge bump, analog trigger zoom, right-stick and trackpad pan, HUD, Paper/Sepia/Night/Dim themes, position persistence, suspend handling | Done |
 | **M2 Library**: folder scan, SQLite, cover thumbnails, Home, Library grid with filters and sort, Book details, first-run folder picker | Done |
-| **M3 Stages and game layer** | Partly done. Stage derivation (outline or even split), the stage map in Book details and the reader (Y), and the rules for levels, streaks and trophies in `core/` with tests. **Not yet:** dwell/coverage counting, XP events, daily quest, toasts for clears, Session complete. |
+| **M3 Stages and game layer**: stage derivation, stage map (Book details and reader Y), page counting by dwell and coverage, XP ledger, levels, daily quest, streak, stage and book clears, trophies, toasts, Session complete, Full/Light/Off intensity | Done (the alternative "XP per minute" model is not built) |
 | M4 Papers (auto-crop, column mode, heading stages) | Not started (the paper heuristic and kind badge already work) |
 | M5 Tate mode, full Settings, Search, Collections, Trophies tab, links | Not started (a first Settings overlay exists) |
 | M6 Ship on Deck: AppImage, install notes, Steam Input layout, artwork | Build script and docs written; on-device QA still to do |
@@ -104,12 +104,14 @@ scripts/      fixture generator, pdf.js asset copy
 ## Where this differs from the spec (flagged per §0)
 
 - **SQLite via `node:sqlite`, not `better-sqlite3`.** Electron 45 ships Node 24, whose built-in SQLite works in WAL mode. With no native module to compile, the Linux AppImage builds straight from a Mac.
-- **Progress is position-based until M3.** Progress bars, percentages, the stage card's "n of m pages" and "left at your pace" use the reading position. The spec defines them on *counted* pages (dwell + coverage), which arrive with the game layer. No stage is ever shown as *cleared* yet, since jumping must never clear one.
+- **Progress means counted pages.** Gold bars and percentages (covers, Home, Book details) show the share of pages *counted* by the dwell and coverage rule, because gold means earned. Where you are in the book shows as "p. X / N" and as the cyan knob in the HUD. A page you jump to still has to be read to count.
+- **Counting details:** coverage is measured on a 24×24 grid of the page, so zoom and panning count. Dwell builds up in 1-second steps and pauses while an overlay (stage map, Display menu) covers the page. Coverage from an earlier session carries over as a single fraction.
+- **Toasts:** several trophies unlocked at the same moment share one toast; pending toasts are dropped when Session complete opens (it lists them all); toasts sit below the HUD's top bar while the HUD is open.
+- **Home "Read again":** when every book is opened and the Continue card would show a cleared book, it says "Cleared · Read again" instead of "Start reading".
 - **Reader D-pad ←/→:** the spec's table reads "D-pad ← / → · Next / previous page". I mapped ← to previous and → to next; the literal order looks like a typo.
 - **B with the HUD open saves and leaves** (the HUD's own "B Library" prompt). §7.5 says the HUD "stays open until A or B", which this also satisfies.
 - **Front matter:** if the first outline entry starts 3 or more pages in, those pages become a "Front matter" stage; a shorter gap joins stage 1.
 - **Short numerals:** when most stages are numbered, unnumbered ones get a short numeral ("Intro", "Pref", "Epil") so the map doesn't mix "1" with "I, II".
-- **HUD chips:** "+N PAGES" and "+N XP" are hidden until M3 counts pages; the session timer is shown.
 - **Settings:** a first overlay with the settings that already work (folders, rescan, theme, fit, gutters, transition, Zen, game layer, daily goal, haptics, reduce motion, debug). Back-grip keys are shown but not yet editable.
 - **Search, Collections and Trophies** aren't built yet: Y shows a "later build" toast, and the two tabs show a placeholder.
 

@@ -5,11 +5,13 @@ import type {
   BookKind,
   BookStats,
   Bookmark,
+  PageProgress,
   ReadingState,
   Session,
   Settings,
   Stage,
   StageSource,
+  TrophyUnlock,
   XpEvent,
 } from '../core/models';
 
@@ -37,6 +39,18 @@ export interface Bootstrap {
   xpEvents: XpEvent[];
   /** Counted pages per reading day. */
   pagesByDay: [string, number][];
+  /** Counted page numbers per book. */
+  counted: [string, number[]][];
+  trophies: TrophyUnlock[];
+  /** Most counted pages in any one session (Marathon progress). */
+  bestSessionPages: number;
+}
+
+/** One write of game-layer progress (§4): page rows, new ledger events, unlocks. */
+export interface GameBatch {
+  progress: PageProgress[];
+  xp: XpEvent[];
+  trophies: TrophyUnlock[];
 }
 
 export interface LibrarySnapshot {
@@ -82,6 +96,8 @@ export interface TomeApi {
   addBookmark(bookmark: Bookmark): Promise<void>;
   removeBookmark(id: string): Promise<void>;
   saveSession(session: Session): Promise<void>;
+  pageProgress(bookId: string): Promise<PageProgress[]>;
+  recordGame(batch: GameBatch): Promise<void>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
   listDir(path?: string): Promise<DirListing>;
   quit(): Promise<void>;
@@ -98,6 +114,8 @@ export const IPC = {
   addBookmark: 'tome:addBookmark',
   removeBookmark: 'tome:removeBookmark',
   saveSession: 'tome:saveSession',
+  pageProgress: 'tome:pageProgress',
+  recordGame: 'tome:recordGame',
   setSettings: 'tome:setSettings',
   listDir: 'tome:listDir',
   quit: 'tome:quit',

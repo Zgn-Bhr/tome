@@ -9,7 +9,7 @@ import { formatDuration, relativeDay } from '../../core/time';
 import { useInput } from '../input/InputProvider';
 import { useFocus } from '../focus/useFocus';
 import { useNav } from '../nav';
-import { useApp, useBookViews } from '../store';
+import { useApp, useBookGame, useBookViews } from '../store';
 import { useGame } from '../game';
 import { C, chakra } from '../tokens';
 import { Button, PromptBar, type Prompt } from '../components/Glyph';
@@ -30,7 +30,8 @@ export function HomeTab({ cycleTab, goTab }: TabProps) {
 
   const continuing = continueCandidate(views);
   const hero: BookView | undefined = continuing ?? startCandidate(views) ?? sortViews(views, 'last_read')[0];
-  const mode = continuing ? 'continue' : 'start';
+  // A cleared book can still be the hero when nothing else is in progress or unread.
+  const mode: HeroMode = continuing ? 'continue' : hero?.cleared ? 'again' : 'start';
   const shelf = useMemo(() => sortViews(views, 'recently_added').slice(0, SHELF), [views]);
 
   const graph = useMemo(() => {
@@ -135,15 +136,18 @@ export function HomeTab({ cycleTab, goTab }: TabProps) {
   );
 }
 
-function Hero({ view, mode, focused }: { view: BookView; mode: 'continue' | 'start'; focused: boolean }) {
+type HeroMode = 'continue' | 'start' | 'again';
+
+function Hero({ view, mode, focused }: { view: BookView; mode: HeroMode; focused: boolean }) {
   const stages = useApp((s) => s.stages[view.book.id]) ?? [];
   const bookmarks = useApp((s) => s.bookmarks[view.book.id]);
+  const bookGame = useBookGame(view.book.id);
   const { book, state, stats } = view;
   const page = state?.page ?? 1;
   const stage = stageForPage(stages, page);
-  const pct = book.pageCount ? Math.round((page / book.pageCount) * 100) : 0;
+  const pct = Math.floor(view.progress * 100);
   const meta =
-    mode === 'continue'
+    mode !== 'start'
       ? [
           stats ? `${formatDuration(stats.activeMs)} read` : null,
           stats?.lastSessionAt ? `last session ${relativeDay(stats.lastSessionAt, Date.now())}` : null,
@@ -158,7 +162,7 @@ function Hero({ view, mode, focused }: { view: BookView; mode: 'continue' | 'sta
     >
       <Cover book={book} width={180} height={254} lift={false} />
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <Eyebrow>{mode === 'continue' ? 'CONTINUE READING' : 'START READING'}</Eyebrow>
+        <Eyebrow color={mode === 'again' ? C.gold : C.cyan}>{mode === 'continue' ? 'CONTINUE READING' : mode === 'again' ? 'CLEARED · READ AGAIN' : 'START READING'}</Eyebrow>
         <h1 className="clamp2" style={{ margin: '10px 0 0', font: chakra(600, 32, 1.1), color: C.textPrimary }}>
           {book.title}
         </h1>
@@ -179,14 +183,14 @@ function Hero({ view, mode, focused }: { view: BookView; mode: 'continue' | 'sta
               </span>
             </div>
             <div style={{ marginTop: 8 }}>
-              <SegmentedProgress segments={stageSegments(stages, mode === 'continue' ? page : 0)} />
+              <SegmentedProgress segments={stageSegments(stages, mode === 'start' ? 0 : page, bookGame.clearedStages)} />
             </div>
           </>
         ) : (
           <span style={{ fontSize: 13, color: C.textDim }}>Reading the outline…</span>
         )}
         <div style={{ marginTop: 18, display: 'flex', gap: 12 }}>
-          <Button glyph="A" label={mode === 'continue' ? 'RESUME' : 'START'} />
+          <Button glyph="A" label={mode === 'continue' ? 'RESUME' : mode === 'again' ? 'OPEN' : 'START'} />
           <Button glyph="X" label="STAGE MAP" kind="secondary" />
         </div>
       </div>

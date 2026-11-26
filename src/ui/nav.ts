@@ -2,11 +2,13 @@
 
 import { createContext, useContext } from 'react';
 import type { Tab } from './components/Header';
+import type { SessionSummary } from './screens/SessionComplete';
 
 export type Route =
   | { name: 'library'; tab: Tab; openSort?: boolean }
   | { name: 'details'; bookId: string }
-  | { name: 'reader'; bookId: string; jumpTo?: number };
+  | { name: 'reader'; bookId: string; jumpTo?: number }
+  | { name: 'session'; summary: SessionSummary };
 
 export interface Nav {
   stack: Route[];

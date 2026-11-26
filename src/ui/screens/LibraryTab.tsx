@@ -19,7 +19,7 @@ import { compactSince, formatDuration } from '../../core/time';
 import { useInput } from '../input/InputProvider';
 import { useFocus } from '../focus/useFocus';
 import { useNav } from '../nav';
-import { useApp, useBookViews } from '../store';
+import { useApp, useBookGame, useBookViews } from '../store';
 import { C, FONT, chakra } from '../tokens';
 import { Button, Glyph, PromptBar } from '../components/Glyph';
 import { Bar, Eyebrow, SegmentedProgress, StatTile, stageSegments } from '../components/Game';
@@ -204,6 +204,7 @@ function GridItem({ v, focused, onPick }: { v: BookView; focused: boolean; onPic
 function SelectedPanel({ v }: { v: BookView }) {
   const stages = useApp((s) => s.stages[v.book.id]) ?? [];
   const bookmarks = useApp((s) => s.bookmarks[v.book.id]);
+  const bookGame = useBookGame(v.book.id);
   const { book, state, stats } = v;
   const page = state?.page ?? 1;
   const stage = stageForPage(stages, page);
@@ -237,7 +238,7 @@ function SelectedPanel({ v }: { v: BookView }) {
             </span>
           </div>
           <div style={{ marginTop: 8 }}>
-            <SegmentedProgress segments={stageSegments(stages, opened ? page : 0)} />
+            <SegmentedProgress segments={stageSegments(stages, opened ? page : 0, bookGame.clearedStages)} />
           </div>
         </>
       ) : null}

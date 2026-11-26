@@ -7,7 +7,7 @@ import { homedir } from 'node:os';
 import { extname, join, normalize, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import type { Bookmark, ReadingState, Session, Settings, Stage } from '../core/models';
-import { IPC, SCHEME, type AppEnv, type Bootstrap, type BookMetaUpdate, type PowerEvent } from '../shared/api';
+import { IPC, SCHEME, type AppEnv, type Bootstrap, type BookMetaUpdate, type GameBatch, type PowerEvent } from '../shared/api';
 import { TomeDb } from './db';
 import { listDir, scanLibrary } from './library';
 import { dataDir, libraryOverride } from './paths';
@@ -172,7 +172,15 @@ function registerIpc(): void {
       stats: db.bookStats(),
       xpEvents: db.xpEvents(),
       pagesByDay: db.pagesByDay(),
+      counted: db.countedPages(),
+      trophies: db.trophyUnlocks(),
+      bestSessionPages: db.bestSessionPages(),
     };
+  });
+  ipcMain.handle(IPC.pageProgress, (_e, id: unknown) => db.pageProgress(assertId(id)));
+  ipcMain.handle(IPC.recordGame, (_e, batch: GameBatch) => {
+    for (const p of batch.progress) assertId(p.bookId);
+    db.recordGame(batch);
   });
   ipcMain.handle(IPC.scanLibrary, async () => {
     await rescan();

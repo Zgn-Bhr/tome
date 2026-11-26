@@ -4,7 +4,8 @@
 import type { Bookmark, ReadingState, Session, Settings } from '../core/models';
 import { deriveStages } from '../core/stages/derive';
 import { guessKind } from '../core/library';
-import { pdfUrl } from '../shared/api';
+import { pdfUrl, type GameBatch } from '../shared/api';
+import { readingDayKey } from '../core/time';
 import { closePdf, openPdf, readMetadata, readOutline, renderCover, sampleText, type PDFDocumentProxy } from '../pdf/document';
 import { api } from './api';
 import { groupBy, store } from './store';
@@ -23,6 +24,9 @@ export async function bootstrap(): Promise<void> {
     stats: Object.fromEntries(b.stats.map((s) => [s.bookId, s])),
     xpEvents: b.xpEvents,
     pagesByDay: new Map(b.pagesByDay),
+    counted: Object.fromEntries(b.counted.map(([id, pages]) => [id, new Set(pages)])),
+    trophies: b.trophies,
+    bestSessionPages: b.bestSessionPages,
   }));
   if (b.settings.rescanOnLaunch || b.books.length === 0) void rescan();
   else void indexPending();
@@ -167,6 +171,35 @@ export async function toggleBookmark(bookId: string, page: number, scrollY: numb
 export async function removeBookmark(bookId: string, id: string): Promise<void> {
   store.set((s) => ({ bookmarks: { ...s.bookmarks, [bookId]: (s.bookmarks[bookId] ?? []).filter((b) => b.id !== id) } }));
   await api.removeBookmark(id);
+}
+
+/**
+ * Store and persist game progress: page rows, new ledger events and unlocks.
+ * `newlyCounted` pages also update the counted set and today's page count.
+ */
+export function recordGame(batch: GameBatch, newlyCounted: { bookId: string; page: number; at: number }[], sessionPages: number): void {
+  if (!batch.progress.length && !batch.xp.length && !batch.trophies.length) return;
+  void api.recordGame(batch);
+  if (!newlyCounted.length && !batch.xp.length && !batch.trophies.length) return;
+  store.set((s) => {
+    const counted = { ...s.counted };
+    const pagesByDay = new Map(s.pagesByDay);
+    for (const c of newlyCounted) {
+      const set = new Set(counted[c.bookId] ?? []);
+      if (set.has(c.page)) continue;
+      set.add(c.page);
+      counted[c.bookId] = set;
+      const day = readingDayKey(c.at);
+      pagesByDay.set(day, (pagesByDay.get(day) ?? 0) + 1);
+    }
+    return {
+      counted,
+      pagesByDay,
+      xpEvents: batch.xp.length ? [...s.xpEvents, ...batch.xp] : s.xpEvents,
+      trophies: batch.trophies.length ? [...s.trophies, ...batch.trophies] : s.trophies,
+      bestSessionPages: Math.max(s.bestSessionPages, sessionPages),
+    };
+  });
 }
 
 /** Persist a session and fold it into the per-book stats. */
