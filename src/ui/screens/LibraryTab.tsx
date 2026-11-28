@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   EMPTY_FILTER_HINTS,
-  FILTERS,
   SORTS,
   SORT_LABELS,
   filterCounts,
   matchesFilter,
   sortViews,
+  visibleFilters,
   type BookView,
   type LibraryFilter,
   type LibrarySort,
@@ -48,6 +48,11 @@ export function LibraryTab({ cycleTab, goTab, openSort }: TabProps & { openSort:
   }, [filter, sort]);
 
   const counts = useMemo(() => filterCounts(views), [views]);
+  const filters = useMemo(() => visibleFilters(counts), [counts]);
+  // The Manuals chip goes away when manuals are turned off; fall back to All.
+  useEffect(() => {
+    if (!filters.includes(filter)) setFilter('all');
+  }, [filters, filter]);
   const shown = useMemo(() => sortViews(views.filter((v) => matchesFilter(v, filter)), sort), [views, filter, sort]);
   const ids = useMemo(() => shown.map((v) => v.book.id), [shown]);
   const graph = useMemo(() => gridGraph(ids, COLS), [ids]);
@@ -55,8 +60,8 @@ export function LibraryTab({ cycleTab, goTab, openSort }: TabProps & { openSort:
   const focusedView = shown.find((v) => v.book.id === focused);
 
   const changeFilter = (d: -1 | 1) => {
-    const i = FILTERS.indexOf(filter);
-    const next = FILTERS[Math.min(FILTERS.length - 1, Math.max(0, i + d))]!;
+    const i = filters.indexOf(filter);
+    const next = filters[Math.min(filters.length - 1, Math.max(0, i + d))]!;
     if (next !== filter) setFilter(next);
   };
 
@@ -107,24 +112,25 @@ export function LibraryTab({ cycleTab, goTab, openSort }: TabProps & { openSort:
 
   return (
     <>
-      <main style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', gap: 32, padding: '24px 40px 0' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 22 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Glyph name="L2" />
-              {FILTERS.map((f) => (
-                <Chip key={f} active={f === filter} label={`${f.toUpperCase()} ${counts[f]}`} />
-              ))}
-              <Glyph name="R2" />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.textMuted }}>
-              <Glyph name="View" size={24} />
-              <span>
-                Sort: <span style={{ color: C.textPrimary, fontWeight: 600 }}>{SORT_LABELS[sort]}</span>
-              </span>
-            </div>
+      <main style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 22, padding: '24px 40px 0' }}>
+        {/* Filters and sort run across the whole width: six chips don't fit beside the panel. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Glyph name="L2" />
+            {filters.map((f) => (
+              <Chip key={f} active={f === filter} label={`${f.toUpperCase()} ${counts[f]}`} />
+            ))}
+            <Glyph name="R2" />
           </div>
-          <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', margin: '-8px -8px 0', padding: '8px 8px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.textMuted, whiteSpace: 'nowrap' }}>
+            <Glyph name="View" size={24} />
+            <span>
+              Sort: <span style={{ color: C.textPrimary, fontWeight: 600 }}>{SORT_LABELS[sort]}</span>
+            </span>
+          </div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 32 }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', margin: '-8px -8px 0', padding: '8px 8px 0' }}>
             {shown.length === 0 ? (
               <div style={{ paddingTop: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
                 <span style={{ font: chakra(600, 22) }}>Nothing here yet</span>
@@ -148,8 +154,8 @@ export function LibraryTab({ cycleTab, goTab, openSort }: TabProps & { openSort:
             )}
             <div aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 90, background: `linear-gradient(rgba(13,17,32,0), ${C.bgBase})`, pointerEvents: 'none' }} />
           </div>
+          {focusedView ? <SelectedPanel v={focusedView} /> : <div style={{ width: 340, flex: 'none' }} />}
         </div>
-        {focusedView ? <SelectedPanel v={focusedView} /> : <div style={{ width: 340, flex: 'none' }} />}
       </main>
       <PromptBar
         prompts={[
@@ -174,6 +180,8 @@ function Chip({ active, label }: { active: boolean; label: string }) {
         padding: '0 14px',
         display: 'inline-flex',
         alignItems: 'center',
+        flex: 'none',
+        whiteSpace: 'nowrap',
         border: active ? 0 : `1px solid ${C.line4}`,
         borderRadius: 18,
         background: active ? C.gold : C.surface1,
@@ -214,7 +222,7 @@ function SelectedPanel({ v }: { v: BookView }) {
       style={{ position: 'relative', width: 340, flex: 'none', marginBottom: 24, borderRadius: 20, background: C.surface1, border: `1px solid ${C.line3}`, padding: 24, display: 'flex', flexDirection: 'column' }}
     >
       <Eyebrow size={12}>
-        {book.kind.toUpperCase()} · {book.pageCount ? `${book.pageCount} PAGES` : 'READING…'}
+        {book.kind === 'manual' ? `MANUAL · ${(book.author ?? '').toUpperCase()}` : book.kind.toUpperCase()} · {book.pageCount ? `${book.pageCount} PAGES` : 'READING…'}
       </Eyebrow>
       <h2 className="clamp2" style={{ margin: '12px 0 0', font: chakra(600, 24, 1.15) }}>
         {book.title}

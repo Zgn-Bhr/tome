@@ -4,7 +4,8 @@ import type { Box } from './layout/box';
 
 export type BookId = string; // sha1 of (file size + first 1 MiB)
 
-export type BookKind = 'book' | 'paper';
+/** `manual`: a game manual downloaded by ES-DE, recognised from its path (core/manuals.ts). */
+export type BookKind = 'book' | 'paper' | 'manual';
 export type StageSource = 'outline' | 'headings' | 'even';
 export type PageTheme = 'paper' | 'sepia' | 'night' | 'dim';
 export type FitMode = 'width' | 'page' | 'column';
@@ -108,7 +109,7 @@ export interface TrophyUnlock {
 export interface Collection {
   id: string;
   name: string;
-  smart?: 'papers' | 'books';
+  smart?: 'papers' | 'books' | 'manuals';
   bookIds: BookId[];
 }
 
@@ -128,6 +129,8 @@ export type PageTransition = 'slide' | 'instant';
 export interface Settings {
   folders: string[];
   includeSdCards: boolean;
+  /** Scan and show the game manuals ES-DE downloads (off: they're skipped and hidden). */
+  gameManuals: boolean;
   rescanOnLaunch: boolean;
   defaultFit: DefaultFit;
   gutters: GutterSize;

@@ -83,6 +83,7 @@ Return to Game Mode. Tome is under **Library → Non-Steam**.
 
 - On first launch it scans `~/Documents`, `~/Downloads` and any SD card under `/run/media/…` (verify on device). If it finds no PDFs, it opens the in-app folder picker.
 - To add more folders later: **☰ (Menu) → Library folders**.
+- **Game manuals from ES-DE** (EmuDeck, RetroDECK) are picked up from `downloaded_media/<system>/manuals/`, including `~/ES-DE`, `~/Emulation/tools` and `~/retrodeck`. They get a shelf per system in **Collections** and a **Manuals** filter in the Library. To leave them out, turn off **☰ (Menu) → Game manuals (ES-DE)**: they're hidden at once and no longer scanned.
 - Tome detects Game Mode (gamescope) and goes fullscreen (verify on device which environment variables gamescope sets). It's also forced fullscreen with the `--fullscreen` launch option.
 
 ## 5. Controls

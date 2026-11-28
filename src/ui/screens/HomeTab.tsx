@@ -2,7 +2,7 @@
 // the Recently added shelf.
 
 import { useEffect, useMemo, useRef } from 'react';
-import { continueCandidate, sortViews, startCandidate, type BookView } from '../../core/library';
+import { continueCandidate, recentlyAdded, sortViews, startCandidate, type BookView } from '../../core/library';
 import { link, mergeGraphs, rowGraph, type FocusGraph } from '../../core/input/focus';
 import { stageForPage, stageTitle } from '../../core/stages/derive';
 import { formatDuration, relativeDay } from '../../core/time';
@@ -30,7 +30,7 @@ export function HomeTab({ cycleTab, goTab }: TabProps) {
   const hero: BookView | undefined = continuing ?? startCandidate(views) ?? sortViews(views, 'last_read')[0];
   // A cleared book can still be the hero when nothing else is in progress or unread.
   const mode: HeroMode = continuing ? 'continue' : hero?.cleared ? 'again' : 'start';
-  const shelf = useMemo(() => sortViews(views, 'recently_added').slice(0, SHELF), [views]);
+  const shelf = useMemo(() => recentlyAdded(views, SHELF), [views]);
 
   const graph = useMemo(() => {
     const covers = shelf.map((v) => `c:${v.book.id}`);

@@ -1,7 +1,7 @@
 // Collections tab (spec §7.8, not designed — kept in the same system as Home's
-// shelf): one row of covers per collection. Smart collections (Papers, Books)
-// are read-only. X on a book adds it to a collection; Menu on a shelf renames
-// or deletes it.
+// shelf): one row of covers per collection. Smart collections (Papers, Books,
+// and "Game manuals · <system>" for ES-DE manuals) are read-only. X on a book
+// adds it to a collection; Menu on a shelf renames or deletes it.
 
 import { useMemo, useState } from 'react';
 import type { Collection } from '../../core/models';
@@ -263,7 +263,8 @@ function ShelfRow({
           {sh.c.name.toUpperCase()}
         </h2>
         <span style={{ fontSize: 13, color: C.textDim }}>
-          {sh.ids.length} {sh.ids.length === 1 ? 'book' : 'books'}
+          {sh.ids.length} {sh.c.smart === 'manuals' ? 'manual' : 'book'}
+          {sh.ids.length === 1 ? '' : 's'}
         </span>
         {smart ? (
           <span style={{ padding: '3px 7px', borderRadius: 5, border: `1px solid ${C.line4}`, font: chakra(700, 10), letterSpacing: '0.12em', color: C.textMuted }}>SMART</span>
@@ -400,7 +401,12 @@ function CollectionMenu({
         { glyphs: ['B'], label: 'Close' },
       ]}
     >
-      {smart ? <span style={{ fontSize: 14, color: C.textMuted }}>A smart collection: it fills itself and can't be renamed or deleted.</span> : null}
+      {smart ? (
+        <span style={{ fontSize: 14, lineHeight: 1.45, color: C.textMuted }}>
+          A smart collection: it fills itself and can't be renamed or deleted.
+          {shelf.c.smart === 'manuals' ? ' To stop scanning game manuals, turn off Game manuals in Settings.' : ''}
+        </span>
+      ) : null}
       <MenuList rows={ids.map((id) => labels[id]!)} focused={focused} />
     </Dialog>
   );

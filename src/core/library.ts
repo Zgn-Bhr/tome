@@ -2,8 +2,13 @@
 
 import type { Book, BookKind, BookStats, ReadingState } from './models';
 
-export type LibraryFilter = 'all' | 'reading' | 'unread' | 'cleared' | 'papers';
-export const FILTERS: readonly LibraryFilter[] = ['all', 'reading', 'unread', 'cleared', 'papers'];
+export type LibraryFilter = 'all' | 'reading' | 'unread' | 'cleared' | 'papers' | 'manuals';
+export const FILTERS: readonly LibraryFilter[] = ['all', 'reading', 'unread', 'cleared', 'papers', 'manuals'];
+
+/** The filters worth showing: Manuals only when there are game manuals. */
+export function visibleFilters(counts: Record<LibraryFilter, number>): LibraryFilter[] {
+  return FILTERS.filter((f) => f !== 'manuals' || counts.manuals > 0);
+}
 
 export type LibrarySort = 'last_read' | 'title' | 'recently_added' | 'progress';
 export const SORTS: readonly LibrarySort[] = ['last_read', 'title', 'recently_added', 'progress'];
@@ -20,6 +25,7 @@ export const EMPTY_FILTER_HINTS: Record<LibraryFilter, string> = {
   unread: 'Every book here has been opened.',
   cleared: 'Finish every stage of a book to clear it.',
   papers: 'Short two-column PDFs with an abstract show up here.',
+  manuals: 'Game manuals that ES-DE downloads show up here.',
 };
 
 export interface BookView {
@@ -48,11 +54,13 @@ export function matchesFilter(v: BookView, f: LibraryFilter): boolean {
       return v.cleared;
     case 'papers':
       return v.book.kind === 'paper';
+    case 'manuals':
+      return v.book.kind === 'manual';
   }
 }
 
 export function filterCounts(views: readonly BookView[]): Record<LibraryFilter, number> {
-  const out = { all: 0, reading: 0, unread: 0, cleared: 0, papers: 0 } as Record<LibraryFilter, number>;
+  const out = { all: 0, reading: 0, unread: 0, cleared: 0, papers: 0, manuals: 0 } as Record<LibraryFilter, number>;
   for (const v of views) for (const f of FILTERS) if (matchesFilter(v, f)) out[f]++;
   return out;
 }
@@ -84,16 +92,29 @@ export function prettifyFilename(path: string): string {
   return stem ? stem.charAt(0).toUpperCase() + stem.slice(1) : base;
 }
 
-/** Book continue order for Home: the most recently opened unfinished book. */
+/**
+ * Book continue order for Home: the most recently opened unfinished book.
+ * Game manuals are looked up rather than read, so a book wins over a manual
+ * opened since; a manual is the hero only when no book is in progress.
+ */
 export function continueCandidate(views: readonly BookView[]): BookView | undefined {
-  return views
+  const open = views
     .filter((v) => v.book.available && v.book.lastOpenedAt !== undefined && !v.cleared)
-    .sort((a, b) => (b.book.lastOpenedAt ?? 0) - (a.book.lastOpenedAt ?? 0))[0];
+    .sort((a, b) => (b.book.lastOpenedAt ?? 0) - (a.book.lastOpenedAt ?? 0));
+  return open.find((v) => v.book.kind !== 'manual') ?? open[0];
 }
 
-/** Most recently added unread book (Home's "START READING" fallback). */
+/** Most recently added unread book (Home's "START READING" fallback); never a game manual. */
 export function startCandidate(views: readonly BookView[]): BookView | undefined {
   return views
-    .filter((v) => v.book.available && v.book.lastOpenedAt === undefined)
+    .filter((v) => v.book.available && v.book.lastOpenedAt === undefined && v.book.kind !== 'manual')
     .sort((a, b) => b.book.addedAt - a.book.addedAt)[0];
+}
+
+/** Home's Recently added shelf: books and papers (ES-DE adds manuals by the hundred). */
+export function recentlyAdded(views: readonly BookView[], count: number): BookView[] {
+  return sortViews(
+    views.filter((v) => v.book.kind !== 'manual'),
+    'recently_added',
+  ).slice(0, count);
 }

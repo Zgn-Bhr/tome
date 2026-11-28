@@ -7,6 +7,7 @@ import { GAME } from './gamification/config';
 export const DEFAULT_SETTINGS: Settings = {
   folders: ['~/Documents', '~/Downloads'],
   includeSdCards: true,
+  gameManuals: true,
   rescanOnLaunch: true,
   defaultFit: 'auto',
   gutters: 'wide',

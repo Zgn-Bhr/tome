@@ -60,10 +60,13 @@ export async function indexPending(): Promise<void> {
   if (indexing) return;
   indexing = true;
   try {
-    const todo = () =>
-      Object.values(store.get().books)
-        .filter((b) => b.available && (needsLayout(b) || !b.thumbAt))
-        .sort((a, b) => b.addedAt - a.addedAt);
+    // Game manuals wait until the books are done, and are skipped while they're hidden.
+    const todo = () => {
+      const s = store.get();
+      return Object.values(s.books)
+        .filter((b) => b.available && (s.settings.gameManuals || b.kind !== 'manual') && (needsLayout(b) || !b.thumbAt))
+        .sort((a, b) => Number(a.kind === 'manual') - Number(b.kind === 'manual') || b.addedAt - a.addedAt);
+    };
     const total = todo().length;
     let done = 0;
     if (total) store.set(() => ({ indexing: { done, total } }));
@@ -120,11 +123,14 @@ export async function indexWithDoc(id: string, doc: PDFDocumentProxy): Promise<v
       const hasClears = (ledgerFacts(s.xpEvents).clearedStages.get(id)?.size ?? 0) > 0;
       const keep = !!book.indexedAt && (hasClears || book.stageSource === 'outline') && !!s.stages[id]?.length;
       const derived = keep ? { stages: s.stages[id]!, source: book.stageSource } : deriveStages(id, pageCount, outline, a.headings);
+      // A game manual keeps the title from its file name and the system as its author
+      // (set when the library is read); scraped PDFs rarely have useful metadata.
+      const manual = book.kind === 'manual';
       const m: BookMetaUpdate = {
-        title: meta.title ?? book.title,
-        ...(meta.author ? { author: meta.author } : book.author ? { author: book.author } : {}),
+        title: manual ? book.title : (meta.title ?? book.title),
+        ...(!manual && meta.author ? { author: meta.author } : book.author ? { author: book.author } : {}),
         pageCount,
-        kind: guessKind(pageCount, a.isTwoColumn, a.hasPaperHeading),
+        kind: manual ? 'manual' : guessKind(pageCount, a.isTwoColumn, a.hasPaperHeading),
         hasTextLayer: a.hasTextLayer,
         isTwoColumn: a.isTwoColumn,
         stageSource: derived.source,

@@ -6,6 +6,7 @@ import type { Book, BookStats, Bookmark, Collection, PageProgress, ReadingState,
 import type { BookMetaUpdate, GameBatch } from '../shared/api';
 import type { Box } from '../core/layout/box';
 import { readingDayKey } from '../core/time';
+import { gameManual, manualTitle, systemName } from '../core/manuals';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS books (
@@ -104,14 +105,19 @@ const str = (v: unknown) => (v === null || v === undefined ? undefined : String(
 const num = (v: unknown) => (v === null || v === undefined ? undefined : Number(v));
 
 function rowToBook(r: Row): Book {
+  // Game manuals are recognised from the path every time, so books indexed before
+  // manuals existed (or moved in or out of an ES-DE folder) need no re-indexing.
+  // Their title comes from the file name and the "author" line names the system.
+  const manual = gameManual(String(r.path));
+  const author = manual ? systemName(manual.system) : str(r.author);
   return {
     id: String(r.id),
     path: String(r.path),
     available: Number(r.available) === 1,
-    title: String(r.title),
-    ...(str(r.author) ? { author: str(r.author)! } : {}),
+    title: manual ? manualTitle(String(r.path)) : String(r.title),
+    ...(author ? { author } : {}),
     pageCount: Number(r.page_count),
-    kind: r.kind === 'paper' ? 'paper' : 'book',
+    kind: manual ? 'manual' : r.kind === 'paper' ? 'paper' : 'book',
     hasTextLayer: Number(r.has_text_layer) === 1,
     isTwoColumn: Number(r.is_two_column) === 1,
     addedAt: Number(r.added_at),

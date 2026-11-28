@@ -14,7 +14,7 @@ import { MenuList, Scrim, type MenuRow } from '../components/Overlay';
 import { useToast } from '../components/Toast';
 
 type EnumKey = 'pageTheme' | 'gutters' | 'defaultFit' | 'pageTransition' | 'gameIntensity';
-type BoolKey = 'zen' | 'haptics' | 'reduceMotion' | 'debugOverlay' | 'rescanOnLaunch' | 'includeSdCards' | 'autoCrop';
+type BoolKey = 'zen' | 'haptics' | 'reduceMotion' | 'debugOverlay' | 'rescanOnLaunch' | 'includeSdCards' | 'gameManuals' | 'autoCrop';
 
 const ENUMS: Record<EnumKey, { label: string; options: string[] }> = {
   pageTheme: { label: 'Page theme', options: ['paper', 'sepia', 'night', 'dim'] },
@@ -30,6 +30,7 @@ const BOOLS: Record<BoolKey, string> = {
   reduceMotion: 'Reduce motion',
   rescanOnLaunch: 'Rescan on launch',
   includeSdCards: 'Include SD cards',
+  gameManuals: 'Game manuals (ES-DE)',
   debugOverlay: 'Debug overlay',
 };
 
@@ -37,6 +38,7 @@ const ORDER: (EnumKey | BoolKey | 'folders' | 'rescan' | 'dailyGoal' | 'grips')[
   'folders',
   'rescan',
   'includeSdCards',
+  'gameManuals',
   'rescanOnLaunch',
   'pageTheme',
   'defaultFit',
@@ -63,6 +65,12 @@ export function SettingsOverlay({ onClose, onAddFolder }: { onClose: () => void;
 
   const set = (patch: Partial<Settings>) => void updateSettings(patch);
   const step = (key: string, d: 1 | -1) => {
+    if (key === 'gameManuals') {
+      // Off hides manuals at once; the rescan then stops reading them (or, turned on, finds them).
+      const on = !s.gameManuals;
+      toast.show({ kind: 'neutral', eyebrow: 'GAME MANUALS', line: on ? 'Looking for ES-DE manuals…' : 'Hidden, and skipped when scanning' });
+      return void updateSettings({ gameManuals: on }).then(rescan);
+    }
     if (key in ENUMS) {
       const e = ENUMS[key as EnumKey];
       const cur = e.options.indexOf(s[key as EnumKey]);
@@ -99,6 +107,13 @@ export function SettingsOverlay({ onClose, onAddFolder }: { onClose: () => void;
       const g = s.backGripKeys;
       return { id: k, label: 'Back-grip keys (Steam Input)', hint: `R4 ${g.r4} · L4 ${g.l4} · R5 ${g.r5} · L5 ${g.l5}` };
     }
+    if (k === 'gameManuals')
+      return {
+        id: k,
+        label: BOOLS.gameManuals,
+        value: s.gameManuals ? 'ON' : 'OFF',
+        hint: s.gameManuals ? 'Manuals from downloaded_media, shelved by system in Collections' : 'Off: manuals are skipped when scanning and hidden',
+      };
     if (k in ENUMS) return { id: k, label: ENUMS[k as EnumKey].label, value: String(s[k as EnumKey]).toUpperCase() };
     return { id: k, label: BOOLS[k as BoolKey], value: s[k as BoolKey] ? 'ON' : 'OFF' };
   });

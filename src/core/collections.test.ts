@@ -26,6 +26,25 @@ describe('collections', () => {
     expect(books!.bookIds).toEqual(['c', 'a']);
   });
 
+  it('shelves game manuals by system, apart from Papers and Books', () => {
+    const manual = (id: string, title: string, system: string): Book => ({
+      ...book(id, title, 'manual'),
+      path: `/home/deck/ES-DE/downloaded_media/${system}/manuals/${title}.pdf`,
+    });
+    const shelves = smartCollections([
+      book('a', 'Zeta', 'book'),
+      manual('m1', 'Super Metroid', 'snes'),
+      manual('m2', 'Crash Bandicoot', 'psx'),
+      manual('m3', 'EarthBound', 'snesna'),
+      manual('m4', 'Spyro', 'psx'),
+    ]);
+    expect(shelves.map((c) => c.name)).toEqual(['Papers', 'Books', 'Game manuals · PlayStation', 'Game manuals · Super Nintendo']);
+    expect(shelves[1]!.bookIds).toEqual(['a']);
+    expect(shelves[2]).toMatchObject({ id: 'smart:manuals:PlayStation', smart: 'manuals', bookIds: ['m2', 'm4'] });
+    // ES-DE's snes and snesna folders share one shelf.
+    expect(shelves[3]!.bookIds).toEqual(['m3', 'm1']);
+  });
+
   it('toggles membership, newest first', () => {
     const c: Collection = { id: '1', name: 'Fav', bookIds: ['a'] };
     expect(toggleBook(c, 'b').bookIds).toEqual(['b', 'a']);

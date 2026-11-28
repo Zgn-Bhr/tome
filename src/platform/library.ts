@@ -1,11 +1,13 @@
 // Folder scan and BookId hashing (spec §4, §11 "Rescan on launch").
 
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { open, opendir, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Settings } from '../core/models';
 import { prettifyFilename } from '../core/library';
+import { ESDE_MEDIA_DIRS, MANUALS_DIR, MEDIA_DIR, gameManual, isMediaSystemDir } from '../core/manuals';
 import type { DirListing } from '../shared/api';
 import type { FileRow, TomeDb } from './db';
 import { expandHome, libraryOverride, sdCardRoots } from './paths';
@@ -32,10 +34,12 @@ export function libraryRoots(settings: Settings): string[] {
   if (override) return override;
   const roots = settings.folders.map(expandHome);
   if (settings.includeSdCards) roots.push(...sdCardRoots());
+  // ES-DE's media folder may live outside the library folders (e.g. ~/ES-DE).
+  if (settings.gameManuals) roots.push(...ESDE_MEDIA_DIRS.map(expandHome).filter((p) => existsSync(p)));
   return [...new Set(roots)];
 }
 
-async function walk(root: string, depth: number, out: string[]): Promise<void> {
+async function walk(root: string, depth: number, out: string[], manuals: boolean): Promise<void> {
   if (depth > MAX_DEPTH || out.length >= MAX_FILES) return;
   let dir;
   try {
@@ -43,11 +47,17 @@ async function walk(root: string, depth: number, out: string[]): Promise<void> {
   } catch {
     return; // missing or unreadable folder
   }
+  const systemDir = isMediaSystemDir(root);
   for await (const ent of dir) {
     if (ent.name.startsWith('.')) continue;
     const p = join(root, ent.name);
     if (ent.isDirectory()) {
-      if (!SKIP_DIRS.has(ent.name)) await walk(p, depth + 1, out);
+      if (SKIP_DIRS.has(ent.name)) continue;
+      const name = ent.name.toLowerCase();
+      // ES-DE media: only <system>/manuals can hold PDFs, and nothing at all when manuals are off.
+      if (name === MEDIA_DIR && !manuals) continue;
+      if (systemDir && name !== MANUALS_DIR) continue;
+      await walk(p, depth + 1, out, manuals);
     } else if (ent.isFile() && ent.name.toLowerCase().endsWith('.pdf')) {
       out.push(p);
       if (out.length >= MAX_FILES) return;
@@ -57,8 +67,10 @@ async function walk(root: string, depth: number, out: string[]): Promise<void> {
 
 /** Scan every library root and reconcile with the database. */
 export async function scanLibrary(db: TomeDb, settings: Settings): Promise<void> {
-  const files: string[] = [];
-  for (const root of libraryRoots(settings)) await walk(root, 0, files);
+  const found: string[] = [];
+  for (const root of libraryRoots(settings)) await walk(root, 0, found, settings.gameManuals);
+  // Roots can overlap (an SD card and its ES-DE folder); a library folder can also sit inside the media folder.
+  const files = [...new Set(found)].filter((p) => settings.gameManuals || !gameManual(p));
 
   const known: Map<string, FileRow> = db.fileIndex();
   const byId = new Map<string, { id: string; path: string; size: number; mtime: number; title: string; addedAt: number }>();

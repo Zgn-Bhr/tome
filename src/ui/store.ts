@@ -93,26 +93,32 @@ export function useBookGame(bookId: string): { counted: ReadonlySet<number>; cle
   return { counted, clearedStages: facts.clearedStages.get(bookId) ?? NO_STAGES, cleared: facts.clearedBooks.has(bookId) };
 }
 
-/** Library views derived from books, reading state, stats and counted pages. */
+/**
+ * Library views derived from books, reading state, stats and counted pages.
+ * Game manuals are left out while Settings → Game manuals is off (their progress stays stored).
+ */
 export function useBookViews(): BookView[] {
   const books = useApp((s) => s.books);
   const states = useApp((s) => s.states);
   const stats = useApp((s) => s.stats);
   const counted = useApp((s) => s.counted);
+  const showManuals = useApp((s) => s.settings.gameManuals);
   const facts = useLedgerFacts();
   return useMemo(
     () =>
-      Object.values(books).map((book) => {
-        const st = states[book.id];
-        const sv = stats[book.id];
-        return {
-          book,
-          ...(st ? { state: st } : {}),
-          ...(sv ? { stats: sv } : {}),
-          progress: progressOf(book, counted[book.id]?.size ?? 0),
-          cleared: facts.clearedBooks.has(book.id),
-        };
-      }),
-    [books, states, stats, counted, facts],
+      Object.values(books)
+        .filter((book) => showManuals || book.kind !== 'manual')
+        .map((book) => {
+          const st = states[book.id];
+          const sv = stats[book.id];
+          return {
+            book,
+            ...(st ? { state: st } : {}),
+            ...(sv ? { stats: sv } : {}),
+            progress: progressOf(book, counted[book.id]?.size ?? 0),
+            cleared: facts.clearedBooks.has(book.id),
+          };
+        }),
+    [books, states, stats, counted, facts, showManuals],
   );
 }
