@@ -14,7 +14,7 @@ Stack: **Electron 45 + React 19 + TypeScript + pdf.js 6**, built with electron-v
 | **M3 Stages and game layer**: stage derivation, stage map (Book details and reader Y), page counting by dwell and coverage, XP ledger, levels, daily quest, streak, stage and book clears, trophies, toasts, Session complete, Full/Light/Off intensity | Done (the alternative "XP per minute" model is not built) |
 | **M4 Papers**: auto-crop margins, two-column detection (text layer or ink for scans), Column mode, heading-based stages, the paper heuristic and Library callout | Done |
 | M5 Tate mode, full Settings, Search, Collections, Trophies tab, links | Partly done: **Collections**, the **in-app keyboard**, **Search** and the **Trophies tab** are built, and a first Settings overlay exists. Tate mode, full Settings and links are not started. |
-| M6 Ship on Deck: AppImage, install notes, Steam Input layout, artwork | Build script and docs written; on-device QA still to do |
+| M6 Ship on Deck: AppImage, install notes, Steam Input layout, artwork | AppImage, install command, install notes and Steam Input layout done. **Steam library artwork** (capsule, wide capsule, hero, logo, icon) ships in the app and goes onto the Steam shortcut by itself. Full on-device QA is still to do. |
 
 ## Run it on your Mac
 
@@ -62,7 +62,7 @@ Or, in Desktop Mode, open Konsole and run:
 curl -sL https://zgn-bhr.github.io/tome/install | bash
 ```
 
-This installs the latest release to `~/Applications/Tome.AppImage` and adds it to Steam. From v0.7.0, Tome updates itself in Game Mode (Settings → Software update); running the command again also updates. Details, manual steps and troubleshooting are in [docs/steam-deck-install.md](docs/steam-deck-install.md); back-grip and trackpad bindings are in [docs/steam-input-layout.md](docs/steam-input-layout.md).
+This installs the latest release to `~/Applications/Tome.AppImage` and adds it to Steam, with its icon and library artwork. From v0.7.0, Tome updates itself in Game Mode (Settings → Software update); running the command again also updates. Details, manual steps and troubleshooting are in [docs/steam-deck-install.md](docs/steam-deck-install.md); back-grip and trackpad bindings are in [docs/steam-input-layout.md](docs/steam-input-layout.md).
 
 ## License
 
@@ -103,6 +103,8 @@ gh release create v0.1.0 dist/Tome-x86_64.AppImage --title "Tome v0.1.0" --notes
 The download page lives in `site/` and is published by `.github/workflows/pages.yml` on every push that changes it or the install script.
 
 **Smoke driver (dev only):** `TOME_SMOKE=steps.json electron .` runs scripted key presses and saves screenshots of the real window. See [src/platform/smoke.ts](src/platform/smoke.ts) for the format. Other environment variables: `TOME_DATA_DIR` (storage root), `TOME_LIBRARY_DIRS` (`:`-separated folders that replace the configured ones) and `TOME_OPEN_DEVTOOLS`.
+
+**Testing Steam artwork (dev only):** set `APPIMAGE` to any existing file and `TOME_STEAM_DIR` to a folder laid out like Steam's (`userdata/<id>/config/shortcuts.vdf` with a shortcut whose `Exe` is that file). Then `electron . --steam-art` (or a normal launch, after 5 s) copies `resources/steam/*.png` into `userdata/<id>/config/grid/`. `--export-icon PATH` saves the icon.
 
 **Testing updates (dev only):** set `APPIMAGE` to a file the updater may replace and `TOME_UPDATE_URL` to a JSON file shaped like GitHub's "latest release" response (`tag_name`, and an asset named `Tome-x86_64.AppImage` with `size`, `digest: "sha256:…"` and `browser_download_url`). With both set, the updater runs on macOS too and accepts download URLs outside GitHub.
 
@@ -155,6 +157,7 @@ scripts/      fixture generator, pdf.js asset copy
   - **Navigation:** L1/R1 and D-pad turns move a whole spread. Go to page, bookmarks and stage jumps land on the spread holding the page, and the counter, HUD and Session complete show ranges ("p. 12–13 / 200").
   - **Page counting:** each page keeps its own coverage. Reading time goes to the left page until it has enough, then to the right one, so a spread can't count two pages in the time of one.
   - **Limits:** zoom works on the spread as one bitmap (capped like a page), without the sharper deep-zoom tiles single pages get.
+- **Steam artwork goes on by itself (owner's request):** M6 asks for capsule, hero and logo art; Tome ships them (plus a wide capsule and an icon, in `resources/steam/`) and puts them on its own shortcut, so nobody has to set them by hand. The install command does it right after adding the shortcut, and Tome does it a few seconds after each launch if the art is missing. Tome finds its shortcut ID in Steam's `shortcuts.vdf` by matching the AppImage path, reads that file only, copies images only into empty slots of `userdata/<id>/config/grid/`, and does each shortcut once (`steam-art.json`), so art people set or cleared themselves stays that way. Steam reads the folder when it starts, so art added while it runs shows after the next restart. The icon is stored inside the shortcut, so new installs get it from the menu entry the install command passes to Steam (`Icon=`), and older shortcuts keep theirs until set by hand.
 - **In-app keyboard:** D-pad and A type, X deletes, Y adds a space, L1/R1 move the cursor, Menu is done, B cancels. Typing on a physical keyboard (or Steam's) also works while it's open: letters type instead of acting as buttons, and Enter means done.
 
 ## Open decisions (spec §16)

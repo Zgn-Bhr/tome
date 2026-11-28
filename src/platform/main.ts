@@ -12,18 +12,14 @@ import { TomeDb } from './db';
 import { listDir, scanLibrary } from './library';
 import { dataDir, libraryOverride } from './paths';
 import { SettingsStore } from './settings';
+import { cliJob } from './cli';
 import { runSmoke } from './smoke';
+import { appImagePath, applySteamArt } from './steamArt';
 import { Updater } from './updater';
 
 const isDev = !app.isPackaged;
 const rendererDir = join(import.meta.dirname, '../renderer');
 const BOOK_ID = /^[0-9a-f]{40}$/;
-
-protocol.registerSchemesAsPrivileged([
-  { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
-]);
-
-if (!app.requestSingleInstanceLock()) app.quit();
 
 /** Fullscreen in Game Mode, or when asked (verify which env vars gamescope sets on device). */
 function wantsFullscreen(): boolean {
@@ -286,7 +282,7 @@ function sendPower(e: PowerEvent): void {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.power, e);
 }
 
-app.whenReady().then(() => {
+function onReady(): void {
   dir = dataDir();
   db = new TomeDb(join(dir, 'tome.db'));
   settings = new SettingsStore(dir);
@@ -301,6 +297,13 @@ app.whenReady().then(() => {
   // only asks GitHub if the setting is on and the last check was a day ago.
   setTimeout(() => updater.autoCheck(settings.get().checkUpdates), 8000);
   setInterval(() => updater.autoCheck(settings.get().checkUpdates), 60 * 60 * 1000);
+  // Library artwork on this AppImage's Steam shortcut (spec M6); only fills empty slots.
+  const appImage = appImagePath();
+  if (appImage) {
+    setTimeout(() => {
+      applySteamArt({ dataDir: dir, exe: appImage }).catch((e: unknown) => console.warn('[steam-art] failed:', e));
+    }, 5000);
+  }
   powerMonitor.on('suspend', () => sendPower('suspend'));
   powerMonitor.on('resume', () => sendPower('resume'));
   app.on('second-instance', () => {
@@ -309,8 +312,30 @@ app.whenReady().then(() => {
       win.focus();
     }
   });
-});
+}
 
-app.on('window-all-closed', () => app.quit());
-app.on('will-quit', () => db?.close());
-process.on('SIGTERM', () => app.quit());
+function start(): void {
+  protocol.registerSchemesAsPrivileged([
+    { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
+  ]);
+  if (!app.requestSingleInstanceLock()) app.quit();
+  void app.whenReady().then(onReady);
+  app.on('window-all-closed', () => app.quit());
+  app.on('will-quit', () => db?.close());
+  process.on('SIGTERM', () => app.quit());
+}
+
+// Install-script jobs (--steam-art, --export-icon) run without a window, and
+// before the single-instance lock so they work while Tome is open.
+const job = cliJob(process.argv);
+if (job) {
+  job().then(
+    (code) => app.exit(code),
+    (e: unknown) => {
+      console.error(e instanceof Error ? e.message : e);
+      app.exit(1);
+    },
+  );
+} else {
+  start();
+}
