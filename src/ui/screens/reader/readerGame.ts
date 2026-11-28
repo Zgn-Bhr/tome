@@ -4,7 +4,7 @@
 import type { PageProgress, Stage, TrophyUnlock, XpEvent } from '../../../core/models';
 import { CoverageGrid, shouldCount, type PageRect } from '../../../core/gamification/coverage';
 import { countPage, isEmpty, ledgerFacts, reachPage, trophyKey, type GameWorld, type Outcome } from '../../../core/gamification/engine';
-import { totalXp } from '../../../core/gamification/levels';
+import { dwellThresholdSec, totalXp } from '../../../core/gamification/levels';
 import { readingDayKey } from '../../../core/time';
 import { recordGame } from '../../actions';
 import { api } from '../../api';
@@ -96,6 +96,14 @@ export class ReaderGame {
 
   isCounted(page: number): boolean {
     return this.pages.get(page)?.counted ?? false;
+  }
+
+  /** Not counted and still short of its dwell time (two-page view reads left, then right). */
+  needsDwell(page: number): boolean {
+    const t = this.pages.get(page);
+    if (!t) return true;
+    if (t.counted) return false;
+    return t.words === undefined || t.dwellMs < dwellThresholdSec(t.words) * 1000;
   }
 
   setWords(page: number, words: number | null): void {

@@ -7,6 +7,7 @@ import { columnGraph } from '../../core/input/focus';
 import { checkForUpdates, downloadUpdate, rescan, restartToUpdate, updateSettings } from '../actions';
 import { compactSince } from '../../core/time';
 import { formatMegabytes } from '../../core/update';
+import { FIT_LABEL } from '../../core/reader/viewport';
 import type { UpdateState } from '../../shared/api';
 import { useInput } from '../input/InputProvider';
 import { useFocus } from '../focus/useFocus';
@@ -22,7 +23,7 @@ type BoolKey = 'zen' | 'haptics' | 'reduceMotion' | 'debugOverlay' | 'rescanOnLa
 const ENUMS: Record<EnumKey, { label: string; options: string[] }> = {
   pageTheme: { label: 'Page theme', options: ['paper', 'sepia', 'night', 'dim'] },
   gutters: { label: 'Gutters', options: ['wide', 'narrow', 'none'] },
-  defaultFit: { label: 'Default fit', options: ['auto', 'width', 'page', 'column'] },
+  defaultFit: { label: 'Default fit', options: ['auto', 'width', 'page', 'spread', 'column'] },
   pageTransition: { label: 'Page transition', options: ['slide', 'instant'] },
   gameIntensity: { label: 'Game layer', options: ['full', 'light', 'off'] },
 };
@@ -167,6 +168,7 @@ export function SettingsOverlay({ onClose, onAddFolder }: { onClose: () => void;
         value: s.gameManuals ? 'ON' : 'OFF',
         hint: s.gameManuals ? 'Manuals from downloaded_media, shelved by system in Collections' : 'Off: manuals are skipped when scanning and hidden',
       };
+    if (k === 'defaultFit') return { id: k, label: ENUMS.defaultFit.label, value: s.defaultFit === 'auto' ? 'AUTO' : FIT_LABEL[s.defaultFit] };
     if (k in ENUMS) return { id: k, label: ENUMS[k as EnumKey].label, value: String(s[k as EnumKey]).toUpperCase() };
     return { id: k, label: BOOLS[k as BoolKey], value: s[k as BoolKey] ? 'ON' : 'OFF' };
   });

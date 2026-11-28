@@ -43,7 +43,8 @@ export const ZOOM_MAX = 4;
 export const pageBox = (s: Size): Box => ({ x0: 0, y0: 0, x1: s.w, y1: s.h });
 
 export function fitScale(region: Box, vp: Size, fit: FitMode, gutter: number): number {
-  if (fit === 'page') return Math.min((vp.w - 2 * PAGE_MARGIN) / boxW(region), (vp.h - 2 * PAGE_MARGIN) / boxH(region));
+  // Page fits the whole page; Two pages fits the whole spread (region = both pages).
+  if (fit === 'page' || fit === 'spread') return Math.min((vp.w - 2 * PAGE_MARGIN) / boxW(region), (vp.h - 2 * PAGE_MARGIN) / boxH(region));
   // Width, and Column (whose region is already the padded segment).
   return Math.max(1, vp.w - 2 * gutter) / boxW(region);
 }
@@ -106,12 +107,16 @@ export function autoFit(page: Size, setting: DefaultFit, isTwoColumn: boolean): 
   return isTwoColumn ? 'column' : 'width';
 }
 
-/** View cycles Width → Page → Column (Column only when the page has columns). */
+/** View cycles Width → Page → Two pages → Column (Column only when the page has columns). */
 export function nextFit(fit: FitMode, hasColumns: boolean): FitMode {
   if (fit === 'width') return 'page';
-  if (fit === 'page') return hasColumns ? 'column' : 'width';
+  if (fit === 'page') return 'spread';
+  if (fit === 'spread') return hasColumns ? 'column' : 'width';
   return 'width';
 }
+
+/** How a fit is named in the HUD, Display menu and Settings. */
+export const FIT_LABEL: Record<FitMode, string> = { width: 'WIDTH', page: 'PAGE', column: 'COLUMN', spread: 'TWO PAGES' };
 
 export function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));

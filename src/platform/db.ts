@@ -149,6 +149,9 @@ const BOOK_COLUMNS: [string, string][] = [
   ['layout_version', 'INTEGER'],
 ];
 
+/** Reading-state columns added after the first release. */
+const STATE_COLUMNS: [string, string][] = [['spread_cover', 'INTEGER']];
+
 export interface FileRow {
   id: string;
   path: string;
@@ -165,6 +168,8 @@ export class TomeDb {
     this.db.exec(SCHEMA);
     const have = new Set((this.db.prepare('PRAGMA table_info(books)').all() as Row[]).map((r) => String(r.name)));
     for (const [name, type] of BOOK_COLUMNS) if (!have.has(name)) this.db.exec(`ALTER TABLE books ADD COLUMN ${name} ${type}`);
+    const haveState = new Set((this.db.prepare('PRAGMA table_info(reading_state)').all() as Row[]).map((r) => String(r.name)));
+    for (const [name, type] of STATE_COLUMNS) if (!haveState.has(name)) this.db.exec(`ALTER TABLE reading_state ADD COLUMN ${name} ${type}`);
   }
 
   close(): void {
@@ -271,19 +276,32 @@ export class TomeDb {
       fitChosen: Number(r.fit_chosen) === 1,
       ...(str(r.theme_override) ? { themeOverride: str(r.theme_override) as ReadingState['themeOverride'] } : {}),
       orientation: String(r.orientation) as ReadingState['orientation'],
+      ...(num(r.spread_cover) !== undefined ? { spreadCover: Number(r.spread_cover) === 1 } : {}),
     }));
   }
 
   saveReadingState(s: ReadingState): void {
     this.db
       .prepare(
-        `INSERT INTO reading_state (book_id, page, scroll_y, segment, zoom, fit, fit_chosen, theme_override, orientation, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO reading_state (book_id, page, scroll_y, segment, zoom, fit, fit_chosen, theme_override, orientation, updated_at, spread_cover)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(book_id) DO UPDATE SET page = excluded.page, scroll_y = excluded.scroll_y, segment = excluded.segment,
            zoom = excluded.zoom, fit = excluded.fit, fit_chosen = excluded.fit_chosen, theme_override = excluded.theme_override,
-           orientation = excluded.orientation, updated_at = excluded.updated_at`,
+           orientation = excluded.orientation, updated_at = excluded.updated_at, spread_cover = excluded.spread_cover`,
       )
-      .run(s.bookId, s.page, s.scrollY, s.segment ?? null, s.zoom, s.fit, s.fitChosen ? 1 : 0, s.themeOverride ?? null, s.orientation, Date.now());
+      .run(
+        s.bookId,
+        s.page,
+        s.scrollY,
+        s.segment ?? null,
+        s.zoom,
+        s.fit,
+        s.fitChosen ? 1 : 0,
+        s.themeOverride ?? null,
+        s.orientation,
+        Date.now(),
+        s.spreadCover === undefined ? null : s.spreadCover ? 1 : 0,
+      );
   }
 
   bookmarks(): Bookmark[] {

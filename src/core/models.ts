@@ -8,7 +8,8 @@ export type BookId = string; // sha1 of (file size + first 1 MiB)
 export type BookKind = 'book' | 'paper' | 'manual';
 export type StageSource = 'outline' | 'headings' | 'even';
 export type PageTheme = 'paper' | 'sepia' | 'night' | 'dim';
-export type FitMode = 'width' | 'page' | 'column';
+/** `spread`: two pages side by side (core/reader/spread.ts). */
+export type FitMode = 'width' | 'page' | 'column' | 'spread';
 export type Orientation = 'landscape' | 'tate-left' | 'tate-right';
 
 export interface Book {
@@ -57,6 +58,8 @@ export interface ReadingState {
   fitChosen?: boolean;
   themeOverride?: PageTheme;
   orientation: Orientation;
+  /** Two-page view: page 1 stands alone (a cover or title page). Default true. */
+  spreadCover?: boolean;
 }
 
 export interface PageProgress {

@@ -4,6 +4,7 @@
 
 import type { Book, Bookmark, FitMode, GameIntensity, PageTheme, Stage } from '../../../core/models';
 import { stageForPage, stageTitle } from '../../../core/stages/derive';
+import { FIT_LABEL } from '../../../core/reader/viewport';
 import { formatClock } from '../../../core/time';
 import { C, PAGE_THEMES, chakra } from '../../tokens';
 import { Glyph, PromptItem } from '../../components/Glyph';
@@ -14,6 +15,7 @@ export function ReaderHud({
   book,
   stages,
   page,
+  pageEnd = page,
   pageCount,
   fit,
   zoom,
@@ -28,6 +30,8 @@ export function ReaderHud({
   book: Book;
   stages: readonly Stage[];
   page: number;
+  /** Two pages: the right-hand page (equals `page` otherwise). */
+  pageEnd?: number;
   pageCount: number;
   fit: FitMode;
   zoom: number;
@@ -40,7 +44,7 @@ export function ReaderHud({
   cleared: ReadonlySet<number>;
 }) {
   const stage = stageForPage(stages, page);
-  const pct = pageCount ? page / pageCount : 0;
+  const pct = pageCount ? pageEnd / pageCount : 0;
   return (
     <>
       <header
@@ -148,13 +152,13 @@ export function ReaderHud({
               }}
             />
           </div>
-          <span style={{ font: chakra(600, 14), color: C.textPrimary, width: 96, textAlign: 'right' }}>
-            p. {page} / {pageCount}
+          <span style={{ font: chakra(600, 14), color: C.textPrimary, minWidth: 96, whiteSpace: 'nowrap', textAlign: 'right' }}>
+            p. {pageEnd > page ? `${page}–${pageEnd}` : page} / {pageCount}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ModeChip label="FIT" value={fit.toUpperCase()} />
+            <ModeChip label="FIT" value={FIT_LABEL[fit]} />
             <ModeChip label="ZOOM" value={`${Math.round(zoom * 100)}%`} />
             <ModeChip label="PAGE" value={PAGE_THEMES[theme].label} />
           </div>

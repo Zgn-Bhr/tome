@@ -53,8 +53,11 @@ describe('reader viewport', () => {
     expect(autoFit(A5_SIZE, 'auto', true)).toBe('column');
     expect(autoFit(A5_SIZE, 'page', true)).toBe('page');
     expect(nextFit('width', false)).toBe('page');
-    expect(nextFit('page', false)).toBe('width');
-    expect(nextFit('page', true)).toBe('column');
+    expect(nextFit('page', false)).toBe('spread');
+    expect(nextFit('spread', false)).toBe('width');
+    expect(nextFit('spread', true)).toBe('column');
+    expect(nextFit('column', true)).toBe('width');
+    expect(autoFit(A5_SIZE, 'spread', true)).toBe('spread');
   });
 
   it('fills the content area with a cropped region and offsets the page', () => {

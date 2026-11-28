@@ -14,7 +14,8 @@ export interface Rendered {
 
 /** Largest bitmap we render for a whole page (device px). Beyond it, detail renders fill in. */
 export const MAX_PAGE_PIXELS = 4096 * 4096;
-const CACHE_SIZE = 6;
+/** Room for the current, next and previous view in Two pages (2 bitmaps each), plus a spare. */
+const CACHE_SIZE = 8;
 
 export class PageRenderer {
   private pages = new Map<number, Promise<PDFPageProxy>>();

@@ -9,6 +9,7 @@ import type { FitMode, PageTheme, ReadingState, Session, Stage } from '../../../
 import { INPUT, zoomFactor } from '../../../core/input/config';
 import { GAME } from '../../../core/gamification/config';
 import { autoFit, clamp, clampView, columnRegion, fitScale, layout, nextFit, pageBox, scrollFraction, zoomAbout, type Layout, type Size, type ViewState } from '../../../core/reader/viewport';
+import { pageLabel, spreadLayout, spreadPages, stepSpread, type SpreadPart } from '../../../core/reader/spread';
 import { boxH, boxW, clampBox, type Box } from '../../../core/layout/box';
 import { cropForPage } from '../../../core/layout/crop';
 import { columnSegments, type Segment } from '../../../core/layout/columns';
@@ -55,6 +56,8 @@ type Status = { kind: 'loading' } | { kind: 'ready' } | { kind: 'error'; title: 
 
 interface Drawn {
   page: number;
+  /** What the base canvas holds: "12" for a page, "s:12-13" for a two-page spread. */
+  key: string;
   /** Device px per point of the bitmap on the base canvas. */
   scale: number;
   /** CSS px per point it was laid out at. */
@@ -86,8 +89,16 @@ interface ReaderState {
   /** Current column segment (Column mode). */
   seg: number;
   pageCount: number;
+  /** The page shown, or the first (left) page of a two-page spread. */
   page: number;
+  /** The page size, or the whole spread's size in spread units (see core/reader/spread.ts). */
   size: Size | null;
+  /** Two pages fit: the pages side by side; null otherwise. */
+  parts: SpreadPart[] | null;
+  /** Two pages fit: page 1 stands alone (per book). */
+  spreadCover: boolean;
+  /** Spread pages that were on screen at the last transform (dwell goes to one of these). */
+  visible: number[];
   v: ViewState;
   fit: FitMode;
   fitChosen: boolean;
@@ -135,6 +146,9 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     pageCount: 0,
     page: 1,
     size: null,
+    parts: null,
+    spreadCover: true,
+    visible: [],
     v: { zoom: 1, scrollY: 0, panX: 0 },
     fit: 'width',
     fitChosen: false,
@@ -169,7 +183,26 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   const stagesRef = useRef(stages);
   stagesRef.current = stages;
 
-  const gutterFor = (fit: FitMode) => (fit === 'page' ? 0 : GUTTER_PX[settingsRef.current.gutters]);
+  const gutterFor = (fit: FitMode) => (fit === 'page' || fit === 'spread' ? 0 : GUTTER_PX[settingsRef.current.gutters]);
+  /** Pages on screen: one, or both pages of a spread. */
+  const shown = (): number[] => (st.parts ? st.parts.map((p) => p.page) : [st.page]);
+  const lastShown = (): number => shown()[shown().length - 1]!;
+  const drawnKey = (): string => (st.parts ? `s:${shown().join('-')}` : String(st.page));
+  /** The spread containing `page`: its pages, combined size and placement. */
+  async function spreadFor(page: number): Promise<{ start: number; size: Size; parts: SpreadPart[] }> {
+    const pages = spreadPages(page, st.pageCount, st.spreadCover);
+    const geoms = await Promise.all(pages.map((n) => geomFor(n)));
+    return { start: pages[0]!, ...spreadLayout(pages.map((n, i) => ({ page: n, size: geoms[i]!.size }))) };
+  }
+  /**
+   * Which page earns reading time (§9.2). In a spread, the left page until it has
+   * enough, then the right one, so a spread doesn't count twice as fast.
+   */
+  const dwellPage = (): number => {
+    if (!st.parts) return st.page;
+    const on = st.visible.length ? st.visible : shown();
+    return on.find((p) => gameT.needsDwell(p)) ?? on.find((p) => !gameT.isCounted(p)) ?? st.page;
+  };
   const theme = (): PageTheme => st.themeOverride ?? settingsRef.current.pageTheme;
   const pixelRatio = () => scaleRef.current * (window.devicePixelRatio || 1);
   const fitFor = (size: Size): FitMode => (st.fitChosen ? st.fit : autoFit(size, settingsRef.current.defaultFit, !!bookRef.current?.isTwoColumn));
@@ -198,6 +231,8 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       const colW = s.kind === 'band' ? boxW(s.box) : Math.max(...segs.filter((x) => x.kind !== 'band').map((x) => boxW(x.box)));
       return columnRegion(s.box, g.size, VP, gutterFor('column'), colW);
     }
+    // Two pages show the whole spread, uncropped, so art across the fold lines up.
+    if (fit === 'spread' && st.parts && st.size) return pageBox(st.size);
     // Fit page shows the whole page (§8.3); auto-crop applies to width and column.
     if (fit === 'page' && g) return pageBox(g.size);
     return cropOf(n);
@@ -257,7 +292,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     base.style.left = `${-R.x0 * d}px`;
     base.style.top = `${-R.y0 * d}px`;
     const det = detailRef.current;
-    const showDetail = !!st.detail && st.detail.page === st.page && Math.abs(st.detail.ds - L.ds) < 1e-6 && st.detail.theme === theme();
+    const showDetail = !st.parts && !!st.detail && st.detail.page === st.page && Math.abs(st.detail.ds - L.ds) < 1e-6 && st.detail.theme === theme();
     if (det) {
       det.style.display = showDetail ? 'block' : 'none';
       if (showDetail && st.detail) {
@@ -275,8 +310,33 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       thumb.style.transform = `translateY(${top}px)`;
     }
     // Coverage (§9.2): the share of the content box (crop) seen so far. In Column
-    // mode the segments together cover it.
-    if (st.drawn.page === st.page) {
+    // mode the segments together cover it; in a spread, each page gets its own part.
+    if (st.parts && st.drawn.key === drawnKey()) {
+      const sx0 = -L.ox / L.ds;
+      const sx1 = (VP.w - L.ox) / L.ds;
+      const sy0 = -L.oy / L.ds;
+      const sy1 = (VP.h - L.oy) / L.ds;
+      st.visible = [];
+      for (const p of st.parts) {
+        // The viewport in this page's own points.
+        const vx0 = Math.max(0, (sx0 - p.x) / p.scale);
+        const vx1 = Math.min(p.size.w, (sx1 - p.x) / p.scale);
+        const vy0 = Math.max(0, sy0 / p.scale);
+        const vy1 = Math.min(p.size.h, sy1 / p.scale);
+        if (vx1 <= vx0 || vy1 <= vy0) continue;
+        st.visible.push(p.page);
+        const crop = cropOf(p.page);
+        const cw = boxW(crop);
+        const ch = boxH(crop);
+        if (cw <= 0 || ch <= 0) continue;
+        gameT.markView(p.page, {
+          x0: clamp((vx0 - crop.x0) / cw, 0, 1),
+          x1: clamp((vx1 - crop.x0) / cw, 0, 1),
+          y0: clamp((vy0 - crop.y0) / ch, 0, 1),
+          y1: clamp((vy1 - crop.y0) / ch, 0, 1),
+        });
+      }
+    } else if (!st.parts && st.drawn.key === String(st.page)) {
       const crop = cropOf(st.page);
       const vx0 = Math.max(R.x0, -L.ox / L.ds);
       const vx1 = Math.min(R.x1, (VP.w - L.ox) / L.ds);
@@ -329,7 +389,30 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     const ds = r.scale / pixelRatio();
     c.style.width = `${st.size.w * ds}px`;
     c.style.height = `${st.size.h * ds}px`;
-    st.drawn = { page: r.page, scale: r.scale, ds, theme: t };
+    st.drawn = { page: r.page, key: String(r.page), scale: r.scale, ds, theme: t };
+    applyTransform();
+  }
+
+  /** Draw a spread's pages side by side into the base canvas at `scale` device px per spread unit. */
+  function drawSpread(bitmaps: Rendered[], scale: number, t: PageTheme, key: string): void {
+    const c = baseRef.current;
+    if (!c || !st.size || !st.parts || key !== drawnKey()) return;
+    c.width = Math.max(1, Math.round(st.size.w * scale));
+    c.height = Math.max(1, Math.round(st.size.h * scale));
+    const ctx = c.getContext('2d', { alpha: false });
+    if (!ctx) return;
+    st.parts.forEach((p, i) => {
+      const b = bitmaps[i];
+      if (!b) return;
+      // Snap the seam to whole pixels so the two halves of a picture meet exactly.
+      const x0 = Math.round(p.x * scale);
+      const x1 = Math.round((p.x + p.size.w * p.scale) * scale);
+      drawThemed(ctx, b.bitmap, t, x0, 0, x1 - x0, c.height);
+    });
+    const ds = scale / pixelRatio();
+    c.style.width = `${st.size.w * ds}px`;
+    c.style.height = `${st.size.h * ds}px`;
+    st.drawn = { page: st.page, key, scale, ds, theme: t };
     applyTransform();
   }
 
@@ -344,29 +427,31 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     ctx.fillRect(0, 0, 8, 8);
     c.style.width = `${st.size.w * L.ds}px`;
     c.style.height = `${st.size.h * L.ds}px`;
-    st.drawn = { page: st.page, scale: 0, ds: L.ds, theme: theme() };
+    st.drawn = { page: st.page, key: drawnKey(), scale: 0, ds: L.ds, theme: theme() };
     applyTransform();
   }
 
   async function ensureRender(): Promise<void> {
+    if (st.parts) return ensureSpreadRender();
     const R = st.renderer;
     const L = currentLayout();
     if (!R || !L || !st.size) return;
     const page = st.page;
+    const key = String(page);
     const t = theme();
     const want = PageRenderer.capScale(st.size, L.ds * pixelRatio());
     const d = st.drawn;
-    if (d && d.page === page && d.theme === t && d.scale > 0 && Math.abs(d.scale - want) / want < 0.03) {
+    if (d && d.key === key && d.theme === t && d.scale > 0 && Math.abs(d.scale - want) / want < 0.03) {
       scheduleDetail();
       return;
     }
     const token = ++st.tokens.render;
     try {
-      if (!d || d.page !== page || d.theme !== t || d.scale === 0) {
+      if (!d || d.key !== key || d.theme !== t || d.scale === 0) {
         const any = R.anyCached(page);
         if (any) draw(any, t);
         else {
-          if (!d || d.page !== page) blank();
+          if (!d || d.key !== key) blank();
           // Uncached turn: a quick low-resolution frame first (§8.1).
           const lo = await R.render(page, want * 0.25, { cache: false });
           if (token !== st.tokens.render) return void lo.bitmap.close();
@@ -384,6 +469,38 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     }
   }
 
+  /** Two pages fit: render both pages at one scale and draw them side by side. */
+  async function ensureSpreadRender(): Promise<void> {
+    const R = st.renderer;
+    const L = currentLayout();
+    const parts = st.parts;
+    if (!R || !L || !st.size || !parts) return;
+    const key = drawnKey();
+    const t = theme();
+    // One bitmap for the whole spread, capped like a page (deep zoom stays a little soft).
+    const want = PageRenderer.capScale(st.size, L.ds * pixelRatio());
+    const d = st.drawn;
+    if (d && d.key === key && d.theme === t && d.scale > 0 && Math.abs(d.scale - want) / want < 0.03) return;
+    const token = ++st.tokens.render;
+    try {
+      const cached = parts.every((p) => R.cached(p.page, want * p.scale));
+      if (!cached && (!d || d.key !== key || d.theme !== t || d.scale === 0)) {
+        if (!d || d.key !== key) blank();
+        // Uncached turn: a quick low-resolution frame first (§8.1).
+        const lo = await Promise.all(parts.map((p) => R.render(p.page, want * p.scale * 0.25, { cache: false })));
+        if (token !== st.tokens.render) return void lo.forEach((r) => r.bitmap.close());
+        drawSpread(lo, want * 0.25, t, key);
+        lo.forEach((r) => r.bitmap.close());
+      }
+      const full = await Promise.all(parts.map((p) => R.render(p.page, want * p.scale)));
+      if (token !== st.tokens.render) return;
+      drawSpread(full, want, t, key);
+      schedulePrefetch();
+    } catch (e) {
+      if (token === st.tokens.render) console.warn('spread render failed', e);
+    }
+  }
+
   function scheduleDetail(): void {
     clearTimeout(st.timers.detail);
     st.timers.detail = window.setTimeout(() => void renderDetail(), DETAIL_MS);
@@ -394,6 +511,10 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     const R = st.renderer;
     const L = currentLayout();
     if (!R || !L || !st.drawn || !st.size) return;
+    if (st.parts) {
+      st.detail = null; // spreads are one capped bitmap; no detail tiles
+      return;
+    }
     const pr = pixelRatio();
     const want = L.ds * pr;
     if (st.drawn.scale >= want * 0.97) {
@@ -446,6 +567,22 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
     const R = st.renderer;
     if (!R) return;
     const from = st.page;
+    if (st.parts) {
+      // Two pages: the next spread, then the previous one, at the scale they'll be drawn at.
+      for (const d of [1, -1] as const) {
+        const start = stepSpread(from, d, st.pageCount, st.spreadCover);
+        if (start === null || st.page !== from || !st.parts) continue;
+        if (performance.now() - st.lastMoveAt < PREFETCH_MS) return schedulePrefetch();
+        try {
+          const sp = await spreadFor(start);
+          const want = PageRenderer.capScale(sp.size, fitScale(pageBox(sp.size), VP, 'spread', 0) * st.v.zoom * pixelRatio());
+          for (const p of sp.parts) await R.render(p.page, want * p.scale);
+        } catch {
+          return;
+        }
+      }
+      return;
+    }
     for (const n of [from + 1, from + 2, from - 1]) {
       if (n < 1 || n > st.pageCount || st.page !== from) continue;
       if (performance.now() - st.lastMoveAt < PREFETCH_MS) return schedulePrefetch();
@@ -511,14 +648,25 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   async function gotoPage(n: number, land: 'top' | 'bottom' = 'top', dir: -1 | 0 | 1 = 0): Promise<void> {
     const R = st.renderer;
     if (!R) return;
-    const target = clamp(n, 1, st.pageCount);
+    let target = clamp(n, 1, st.pageCount);
     const token = ++st.tokens.nav;
-    const g = await geomFor(target);
+    let g = await geomFor(target);
+    const fit = fitFor(g.size);
+    // Two pages: land on the spread that holds the page.
+    let sp: Awaited<ReturnType<typeof spreadFor>> | null = null;
+    if (fit === 'spread') {
+      sp = await spreadFor(target);
+      target = sp.start;
+      g = await geomFor(target);
+    }
     if (token !== st.tokens.nav) return;
-    const changed = target !== st.page;
+    const before = drawnKey();
     st.page = target;
-    st.size = g.size;
-    st.fit = fitFor(g.size);
+    st.parts = sp?.parts ?? null;
+    st.size = sp?.size ?? g.size;
+    st.fit = fit;
+    st.visible = [];
+    const changed = drawnKey() !== before;
     // Column mode lands on the first segment, or the last one when coming back up.
     const segs = effFit() === 'column' ? g.segments : null;
     st.seg = land === 'top' || !segs?.length ? 0 : segs.length - 1;
@@ -536,14 +684,21 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       input.rumble('tick');
       gameT.flush();
     }
-    gameT.reach(target, Date.now());
+    for (const p of shown()) gameT.reach(p, Date.now());
     persistNow();
     rerender();
   }
 
-  function turn(d: -1 | 1): void {
+  /** The page (or spread start) one turn away, or null at either end. */
+  function neighbour(d: -1 | 1): number | null {
+    if (st.parts) return stepSpread(st.page, d, st.pageCount, st.spreadCover);
     const next = st.page + d;
-    if (next < 1 || next > st.pageCount) return bump(d);
+    return next >= 1 && next <= st.pageCount ? next : null;
+  }
+
+  function turn(d: -1 | 1): void {
+    const next = neighbour(d);
+    if (next === null) return bump(d);
     void gotoPage(next, 'top', d);
   }
 
@@ -570,8 +725,8 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       changeSegment(st.seg + d, d > 0 ? 'top' : 'bottom', d);
       return;
     }
-    const next = st.page + d;
-    if (st.bumpArmed === d && next >= 1 && next <= st.pageCount) {
+    const next = neighbour(d);
+    if (st.bumpArmed === d && next !== null) {
       st.bumpArmed = null;
       void gotoPage(next, d > 0 ? 'top' : 'bottom', d);
       return;
@@ -604,7 +759,8 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
 
   function stageJump(d: -1 | 1): void {
     const list = stagesRef.current;
-    const cur = stageForPage(list, st.page);
+    // In a spread, forward goes past the stage of the right page, back starts from the left one.
+    const cur = stageForPage(list, d > 0 ? lastShown() : st.page);
     if (!cur) return;
     if (d > 0) {
       const next = list[cur.index + 1];
@@ -618,6 +774,15 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
 
   function setFit(f: FitMode): void {
     if (!st.size) return;
+    if (f === 'spread' || st.parts) {
+      // Into or out of Two pages: the pages shown change, so lay out again from this page.
+      st.fit = f;
+      st.fitChosen = true;
+      st.detail = null;
+      st.v = { zoom: 1, panX: 0, scrollY: 0 };
+      void gotoPage(st.page, 'top', 0);
+      return;
+    }
     const L = currentLayout();
     const frac = L ? scrollFraction(L, st.v) : 0;
     // The page point at the centre of the screen picks the column segment to start in.
@@ -643,6 +808,14 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
 
   const hasColumns = (): boolean => !!st.geom.get(st.page)?.segments?.length;
 
+  /** Display menu: in Two pages, whether page 1 stands alone (per book). */
+  function setSpreadCover(on: boolean): void {
+    st.spreadCover = on;
+    if (st.parts) void gotoPage(st.page, 'top', 0);
+    else persistNow();
+    rerender();
+  }
+
   // ── Persistence and sessions (§8.8, §9.8) ───────────────────────────────
 
   function readingState(): ReadingState {
@@ -657,6 +830,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       ...(effFit() === 'column' ? { segment: st.seg } : {}),
       ...(st.themeOverride ? { themeOverride: st.themeOverride } : {}),
       orientation: 'landscape',
+      spreadCover: st.spreadCover,
     };
   }
 
@@ -678,7 +852,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   function saveSessionNow(end: boolean): void {
     session.countedPages = gameT.totals.pages;
     if (session.activeMs <= 0) return;
-    const s: Session = { ...session, endPage: st.page, ...(end ? { endedAt: Date.now() } : {}) };
+    const s: Session = { ...session, endPage: lastShown(), ...(end ? { endedAt: Date.now() } : {}) };
     saveSession(s, savedActive.current);
     savedActive.current = session.activeMs;
   }
@@ -713,7 +887,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       bookId,
       title: bookRef.current?.title ?? '',
       startPage: session.startPage,
-      endPage: st.page,
+      endPage: lastShown(),
       pages: t.pages,
       activeMs: session.activeMs,
       xp: t.xp,
@@ -765,6 +939,14 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
         st.fit = saved?.fit ?? 'width';
         st.fit = fitFor(g.size);
         st.themeOverride = saved?.themeOverride;
+        st.spreadCover = saved?.spreadCover ?? true;
+        if (st.fit === 'spread') {
+          const sp = await spreadFor(start);
+          if (cancelled) return;
+          st.page = sp.start;
+          st.parts = sp.parts;
+          st.size = sp.size;
+        }
         const segs = effFit() === 'column' ? g.segments : null;
         st.seg = segs?.length && !jumpTo ? clamp(saved?.segment ?? 0, 0, segs.length - 1) : 0;
         st.v = clampView(regionNow()!, VP, effFit(), gutter(), { zoom: saved?.zoom ?? 1, panX: 0, scrollY: 0 });
@@ -772,13 +954,13 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
           const L = layout(regionNow()!, VP, effFit(), gutter(), st.v);
           st.v = clampView(regionNow()!, VP, effFit(), gutter(), { ...st.v, scrollY: saved.scrollY * L.maxScroll });
         }
-        session.startPage = start;
+        session.startPage = st.page;
         setStatus({ kind: 'ready' });
         blank();
         void ensureRender();
         persistNow();
         void gameT.start(doc.numPages, store.get().stages[bookId] ?? []).then(() => {
-          if (!cancelled) gameT.reach(st.page, Date.now());
+          if (!cancelled) for (const p of shown()) gameT.reach(p, Date.now());
         });
         const b = store.get().books[bookId];
         if (b && (needsLayout(b) || !b.thumbAt)) indexWithDoc(bookId, doc).catch((e) => console.warn('index in reader failed', e));
@@ -815,7 +997,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
       if (active) {
         session.activeMs += 1000;
         // Dwell (§9.2): only while the page is actually on screen, not under an overlay.
-        if (st.renderer && overlayRef.current === null) gameT.tick(st.page, 1000, Date.now());
+        if (st.renderer && overlayRef.current === null) gameT.tick(dwellPage(), 1000, Date.now());
       }
       if (++n % 10 === 0) {
         gameT.flush();
@@ -855,7 +1037,13 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   // background re-analysis of this book (crop boxes, two-column).
   useEffect(() => {
     if (!st.size || !st.renderer) return;
-    st.fit = fitFor(st.size);
+    const pageSize = st.geom.get(st.page)?.size ?? st.size;
+    // A new default fit can switch Two pages on or off; that needs a fresh layout.
+    if ((fitFor(pageSize) === 'spread') !== !!st.parts) {
+      void gotoPage(st.page, 'top', 0);
+      return;
+    }
+    st.fit = fitFor(pageSize);
     const segs = st.geom.get(st.page)?.segments;
     st.seg = segs?.length ? clamp(st.seg, 0, segs.length - 1) : 0;
     st.v = clampView(regionNow()!, VP, effFit(), gutter(), st.v);
@@ -986,7 +1174,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
   // ── View ────────────────────────────────────────────────────────────────
 
   const t = theme();
-  const progress = st.pageCount ? st.page / st.pageCount : 0;
+  const progress = st.pageCount ? lastShown() / st.pageCount : 0;
   const showChrome = status.kind === 'ready' && !settings.zen && !hud;
 
   return (
@@ -1004,7 +1192,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
           <div ref={slideRef} style={{ position: 'absolute', inset: 0 }}>
             <div
               ref={pageRef}
-              aria-label={`PDF page ${st.page}`}
+              aria-label={st.parts ? `PDF pages ${pageLabel(shown())}` : `PDF page ${st.page}`}
               style={{
                 position: 'absolute',
                 left: 0,
@@ -1030,7 +1218,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
             <div ref={thumbRef} style={{ width: 4, height: 70, borderRadius: 2, background: C.glyphOutline }} />
           </div>
           <span style={{ position: 'absolute', right: 28, bottom: 18, font: chakra(600, 14), letterSpacing: '0.06em', color: C.textDim }}>
-            {st.page} / {st.pageCount}
+            {pageLabel(shown())} / {st.pageCount}
           </span>
         </>
       ) : null}
@@ -1052,6 +1240,7 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
           book={book}
           stages={stages}
           page={st.page}
+          pageEnd={lastShown()}
           pageCount={st.pageCount}
           fit={effFit()}
           zoom={st.v.zoom}
@@ -1070,6 +1259,8 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
           theme={t}
           fit={effFit()}
           hasColumns={hasColumns()}
+          spreadCover={st.spreadCover}
+          onSpreadCover={setSpreadCover}
           bookOnly={st.themeOverride !== undefined}
           onTheme={(th, bookOnly) => {
             if (bookOnly) st.themeOverride = th;
