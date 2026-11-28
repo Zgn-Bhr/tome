@@ -29,6 +29,11 @@
   .top nav { display: flex; gap: 22px; font: 600 14px/1 var(--head); letter-spacing: .08em; }
   .top nav a { color: var(--muted); text-decoration: none; }
   .top nav a:hover { color: var(--text); }
+  .top .right { display: flex; align-items: center; gap: 24px; }
+  /* Gold surface, not solid gold: Download stays the one primary button. */
+  .support { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 15px 0 12px; border-radius: 18px; border: 1px solid var(--gold-border); background: var(--gold-surface); color: var(--gold); font: 600 14px/1 var(--head); letter-spacing: .08em; text-decoration: none; white-space: nowrap; }
+  .support:hover { background: #3A3018; color: #FFCF6E; }
+  .support:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
 
   .hero { background: radial-gradient(ellipse 60% 90% at 25% 0%, rgba(88,199,230,.10), transparent 70%); padding: 64px 0 40px; }
   .hero .wrap { display: grid; grid-template-columns: 1fr 1.15fr; gap: 48px; align-items: center; }
@@ -101,11 +106,17 @@
       <svg width="28" height="28" viewBox="0 0 30 30" fill="none" stroke="#58C7E6" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M15 8c-3-2-7-2.5-11-2v17c4-.5 8 0 11 2 3-2 7-2.5 11-2V6c-4-.5-8 0-11 2z"/><path d="M15 8v17"/></svg>
       TOME
     </a>
-    <nav aria-label="Page">
-      <a href="#install">Install</a>
-      <a href="#screens">Screens</a>
-      <a href="https://github.com/Zgn-Bhr/tome">GitHub</a>
-    </nav>
+    <div class="right">
+      <nav aria-label="Page">
+        <a href="#install">Install</a>
+        <a href="#screens">Screens</a>
+        <a href="https://github.com/Zgn-Bhr/tome">GitHub</a>
+      </nav>
+      <a class="support" href="https://buymeacoffee.com/zgnbhr" title="Buy me a coffee">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h12v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3.5c-.6.8-.6 1.7 0 2.5M12 3.5c-.6.8-.6 1.7 0 2.5"/></svg>
+        Support me
+      </a>
+    </div>
   </div>
 </header>
 
@@ -197,7 +208,7 @@
 
 <footer>
   <div class="wrap">
-    <span>Tome · <a href="https://github.com/Zgn-Bhr/tome/releases">Releases</a> · <a href="https://github.com/Zgn-Bhr/tome">Source</a> · <a href="https://github.com/Zgn-Bhr/tome/issues">Report a problem</a></span>
+    <span>Tome · <a href="https://github.com/Zgn-Bhr/tome/releases">Releases</a> · <a href="https://github.com/Zgn-Bhr/tome">Source</a> · <a href="https://github.com/Zgn-Bhr/tome/issues">Report a problem</a> · <a href="https://buymeacoffee.com/zgnbhr">Buy me a coffee</a></span>
     <span>Steam and Steam Deck are trademarks of Valve Corporation. Tome is not affiliated with Valve.</span>
   </div>
 </footer>

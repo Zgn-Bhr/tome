@@ -64,6 +64,10 @@ curl -sL https://zgn-bhr.github.io/tome/install | bash
 
 This installs the latest release to `~/Applications/Tome.AppImage` and adds it to Steam. From v0.7.0, Tome updates itself in Game Mode (Settings → Software update); running the command again also updates. Details, manual steps and troubleshooting are in [docs/steam-deck-install.md](docs/steam-deck-install.md); back-grip and trackpad bindings are in [docs/steam-input-layout.md](docs/steam-input-layout.md).
 
+## Support
+
+Tome is free. If it's useful to you, you can [buy me a coffee](https://buymeacoffee.com/zgnbhr).
+
 ## Build for Steam Deck
 
 ```bash
