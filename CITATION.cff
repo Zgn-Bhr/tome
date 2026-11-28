@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use Tome or its code, please cite it as below."
+type: software
+title: "Tome: a controller-first PDF reader for Steam Deck"
+abstract: >-
+  Tome is a PDF reader for the Steam Deck's Game Mode that works entirely on the
+  controller, with Width, Page, Two-page and Column fits, auto-cropped margins,
+  column-by-column reading for two-column papers, and an optional game layer of
+  stages, XP, streaks and trophies.
+authors:
+  - name: "ZgnBhr"
+repository-code: "https://github.com/Zgn-Bhr/tome"
+url: "https://zgn-bhr.github.io/tome/"
+license: Apache-2.0
+version: 0.8.1
+date-released: "2026-11-28"
+keywords:
+  - steam-deck
+  - steamos
+  - pdf-reader
+  - controller
+  - game-mode

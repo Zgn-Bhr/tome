@@ -4,7 +4,9 @@
   "version": "0.8.1",
   "description": "A controller-first PDF reader for Steam Deck Game Mode",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
+  "author": "ZgnBhr",
+  "homepage": "https://zgn-bhr.github.io/tome/",
   "main": "out/main/main.js",
   "type": "module",
   "scripts": {

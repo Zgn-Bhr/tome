@@ -64,6 +64,14 @@ curl -sL https://zgn-bhr.github.io/tome/install | bash
 
 This installs the latest release to `~/Applications/Tome.AppImage` and adds it to Steam. From v0.7.0, Tome updates itself in Game Mode (Settings → Software update); running the command again also updates. Details, manual steps and troubleshooting are in [docs/steam-deck-install.md](docs/steam-deck-install.md); back-grip and trackpad bindings are in [docs/steam-input-layout.md](docs/steam-input-layout.md).
 
+## License
+
+Tome is open source under the [Apache License 2.0](LICENSE). You may use, change and share it, including in your own projects. If you redistribute Tome or something built from its code, keep the [NOTICE](NOTICE) file with it, so the credit travels with the code (Apache-2.0, section 4).
+
+Using Tome in research or writing about it? GitHub's **Cite this repository** button (from [CITATION.cff](CITATION.cff)) gives a ready-made citation.
+
+Bundled parts keep their own licenses: pdf.js (Apache-2.0), Electron, React and the other libraries (MIT), and the Chakra Petch, Inter and Literata fonts (SIL Open Font License).
+
 ## Support
 
 Tome is free. If it's useful to you, you can [buy me a coffee](https://buymeacoffee.com/zgnbhr).
