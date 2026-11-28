@@ -145,5 +145,7 @@ export interface Settings {
   backGripKeys: { r4: string; l4: string; r5: string; l5: string };
   haptics: boolean;
   reduceMotion: boolean;
+  /** Ask GitHub for a new version about once a day (the AppImage only). */
+  checkUpdates: boolean;
   debugOverlay: boolean;
 }

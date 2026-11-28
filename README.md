@@ -62,7 +62,7 @@ Or, in Desktop Mode, open Konsole and run:
 curl -sL https://zgn-bhr.github.io/tome/install | bash
 ```
 
-This installs the latest release to `~/Applications/Tome.AppImage` and adds it to Steam. Run it again to update. Details, manual steps and troubleshooting are in [docs/steam-deck-install.md](docs/steam-deck-install.md); back-grip and trackpad bindings are in [docs/steam-input-layout.md](docs/steam-input-layout.md).
+This installs the latest release to `~/Applications/Tome.AppImage` and adds it to Steam. From v0.7.0, Tome updates itself in Game Mode (Settings → Software update); running the command again also updates. Details, manual steps and troubleshooting are in [docs/steam-deck-install.md](docs/steam-deck-install.md); back-grip and trackpad bindings are in [docs/steam-input-layout.md](docs/steam-input-layout.md).
 
 ## Build for Steam Deck
 
@@ -91,6 +91,8 @@ gh release create v0.1.0 dist/Tome-x86_64.AppImage --title "Tome v0.1.0" --notes
 The download page lives in `site/` and is published by `.github/workflows/pages.yml` on every push that changes it or the install script.
 
 **Smoke driver (dev only):** `TOME_SMOKE=steps.json electron .` runs scripted key presses and saves screenshots of the real window. See [src/platform/smoke.ts](src/platform/smoke.ts) for the format. Other environment variables: `TOME_DATA_DIR` (storage root), `TOME_LIBRARY_DIRS` (`:`-separated folders that replace the configured ones) and `TOME_OPEN_DEVTOOLS`.
+
+**Testing updates (dev only):** set `APPIMAGE` to a file the updater may replace and `TOME_UPDATE_URL` to a JSON file shaped like GitHub's "latest release" response (`tag_name`, and an asset named `Tome-x86_64.AppImage` with `size`, `digest: "sha256:…"` and `browser_download_url`). With both set, the updater runs on macOS too and accepts download URLs outside GitHub.
 
 ## Layout
 
@@ -121,7 +123,13 @@ scripts/      fixture generator, pdf.js asset copy
 - **B with the HUD open saves and leaves** (the HUD's own "B Library" prompt). §7.5 says the HUD "stays open until A or B", which this also satisfies.
 - **Front matter:** if the first outline entry starts 3 or more pages in, those pages become a "Front matter" stage; a shorter gap joins stage 1.
 - **Short numerals:** when most stages are numbered, unnumbered ones get a short numeral ("Intro", "Pref", "Epil") so the map doesn't mix "1" with "I, II".
-- **Settings:** a first overlay with the settings that already work (folders, rescan, SD cards, game manuals, theme, fit, gutters, transition, Zen, game layer, daily goal, haptics, reduce motion, debug). Back-grip keys are shown but not yet editable.
+- **Settings:** a first overlay with the settings that already work (software update, folders, rescan, SD cards, game manuals, theme, fit, gutters, transition, Zen, game layer, daily goal, haptics, reduce motion, update checks, debug). Back-grip keys are shown but not yet editable.
+- **In-app updates, a network feature cleared with the owner (§0):** so updating doesn't need Desktop Mode. This is Tome's only network use.
+  - **Check:** about 8 s after launch (then hourly while open), if **Check for updates automatically** is on (the default) and the last check was 20+ hours ago, the AppImage asks GitHub's API for the latest release. It sends one GET with `User-Agent: Tome/<version>` and nothing about you or your library. Offline, the automatic check fails silently and tries again later.
+  - **Notice:** a new version shows an "Update available" toast, and **Software update** (top of Settings) offers *Install · size*.
+  - **Install:** only after A. The AppImage downloads next to the running one, is checked against its size and the SHA-256 digest GitHub publishes, then renamed over it. The running app keeps its old copy, and the Steam shortcut (same path) starts the new one. A failed or tampered download leaves the old file untouched.
+  - **Restart now:** `/bin/sh` waits for Tome to exit, then starts the new AppImage. Electron's own relaunch helper would run from the old AppImage mount, which goes away when Tome quits. Whether Steam's Game Mode shows the restarted window still needs checking on a Deck; otherwise the new version simply starts next time.
+  - **Limits:** only files from this repo's release downloads are accepted. Development and macOS builds show "Only the AppImage updates itself".
 - **Library filter row:** the filter chips and sort run across the full width, above the grid and the side panel, so a sixth chip (Manuals) fits.
 - **Search (§7.8):** Y opens it from any library tab. The keyboard sits on screen, with results above it updating as you type; an empty query shows recent books. D-pad Up from the top row of keys (or Menu, or the RESULTS key) jumps into the results, where A opens and X shows Book details; B goes back to the keyboard. Every word must match the title, author or file name, by substring or letters in order (for words of 3+ letters). The query is kept while you're away reading.
 - **Trophies tab (§7.8, not designed):** cards in the style of Home's trophy card. Global trophies form a 4-wide grid; Per book has one row of three for each book you've opened. Unlocked trophies are gold with their date; locked ones show a progress bar. A shows details. In Light or Off game mode the tab explains that trophies are hidden.

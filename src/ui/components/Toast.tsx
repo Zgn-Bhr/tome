@@ -3,15 +3,15 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import { C, chakra } from '../tokens';
 import { Hex } from './Game';
-import { BookmarkIcon, Check, Folder } from './Icons';
+import { BookmarkIcon, Check, DownloadIcon, Folder } from './Icons';
 
 export interface ToastSpec {
   kind: 'gold' | 'neutral';
   eyebrow: string;
   line: string;
   value?: string;
-  /** Neutral toasts: bookmark (default) or shelf (collections, folders). */
-  icon?: 'bookmark' | 'shelf';
+  /** Neutral toasts: bookmark (default), shelf (collections, folders) or update. */
+  icon?: 'bookmark' | 'shelf' | 'update';
 }
 
 interface ToastApi {
@@ -120,7 +120,7 @@ function ToastView({ t, leaving, top }: { t: ToastSpec; leaving: boolean; top: n
         </Hex>
       ) : (
         <Hex w={46} h={42} fill={C.line3} outline={{ w: 42, h: 38 }} inner={C.surfaceInset}>
-          {t.icon === 'shelf' ? <Folder size={18} color={C.cyan} /> : <BookmarkIcon />}
+          {t.icon === 'shelf' ? <Folder size={18} color={C.cyan} /> : t.icon === 'update' ? <DownloadIcon /> : <BookmarkIcon />}
         </Hex>
       )}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>

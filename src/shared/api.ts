@@ -18,6 +18,8 @@ import type {
 } from '../core/models';
 
 export interface AppEnv {
+  /** The app's version, e.g. "0.6.0". */
+  version: string;
   platform: string;
   /** Running inside gamescope / Steam Game Mode (best guess, verify on device). */
   gameMode: boolean;
@@ -93,6 +95,22 @@ export interface DirListing {
 
 export type PowerEvent = 'suspend' | 'resume';
 
+/**
+ * In-app updates (platform/updater.ts). Only the AppImage can update itself;
+ * elsewhere (development, macOS) the state stays `unsupported`.
+ */
+export type UpdateState =
+  | { kind: 'unsupported' }
+  | { kind: 'idle'; checkedAt?: number }
+  | { kind: 'checking' }
+  | { kind: 'current'; checkedAt: number }
+  | { kind: 'available'; version: string; title: string; size: number }
+  | { kind: 'downloading'; version: string; received: number; size: number }
+  /** Installed in place: the next start (or Restart now) runs the new version. */
+  | { kind: 'ready'; version: string }
+  /** `version` is set when a download failed, so it can be retried. */
+  | { kind: 'error'; message: string; version?: string };
+
 export interface TomeApi {
   bootstrap(): Promise<Bootstrap>;
   scanLibrary(): Promise<LibrarySnapshot>;
@@ -111,6 +129,14 @@ export interface TomeApi {
   listDir(path?: string): Promise<DirListing>;
   quit(): Promise<void>;
   onPower(cb: (e: PowerEvent) => void): () => void;
+  updateState(): Promise<UpdateState>;
+  /** Ask GitHub now (Settings → Software update). */
+  checkForUpdates(): Promise<UpdateState>;
+  /** Download, verify and install the available version in place. */
+  downloadUpdate(): Promise<void>;
+  /** Quit and start the installed version. */
+  restartToUpdate(): Promise<void>;
+  onUpdate(cb: (s: UpdateState) => void): () => void;
 }
 
 export const IPC = {
@@ -131,6 +157,11 @@ export const IPC = {
   listDir: 'tome:listDir',
   quit: 'tome:quit',
   power: 'tome:power',
+  updateState: 'tome:updateState',
+  checkForUpdates: 'tome:checkForUpdates',
+  downloadUpdate: 'tome:downloadUpdate',
+  restartToUpdate: 'tome:restartToUpdate',
+  update: 'tome:update',
 } as const;
 
 /** All app-served resources share one origin so production needs no CORS. */

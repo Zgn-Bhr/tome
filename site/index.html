@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tome — PDF reader for Steam Deck</title>
-<meta name="description" content="Tome is a controller-first PDF reader for Steam Deck Game Mode, with stages, XP and streaks around your reading. Free, offline, no account.">
+<meta name="description" content="Tome is a controller-first PDF reader for Steam Deck Game Mode, with stages, XP and streaks around your reading. Free, works offline, no account.">
 <style>
   @font-face { font-family: 'Chakra Petch'; font-weight: 600; font-display: swap; src: url(fonts/chakra-petch-latin-600-normal.woff2) format('woff2'); }
   @font-face { font-family: 'Chakra Petch'; font-weight: 700; font-display: swap; src: url(fonts/chakra-petch-latin-700-normal.woff2) format('woff2'); }
@@ -126,7 +126,7 @@
             How to install
           </a>
         </div>
-        <p class="meta"><b id="version">Latest release</b> · Free · Offline, no account · Early build: not yet tested on Steam Deck hardware</p>
+        <p class="meta"><b id="version">Latest release</b> · Free · Works offline, no account · Updates itself in Game Mode · Early build</p>
       </div>
       <img class="shot" src="img/home.jpg" width="1280" height="800" alt="Tome's Home screen: a Continue reading card, the daily quest, the next trophy, and a shelf of recently added books.">
     </div>
@@ -135,7 +135,7 @@
   <section id="install">
     <div class="wrap">
       <h2>Install</h2>
-      <p class="sub">Do this once in Desktop Mode (Steam button → Power → Switch to Desktop). After that, Tome starts from your Steam library in Game Mode.</p>
+      <p class="sub">Do this once in Desktop Mode (Steam button → Power → Switch to Desktop). After that, Tome starts from your Steam library in Game Mode, and updates itself there too.</p>
       <div class="install">
         <div class="card">
           <span class="eyebrow">No terminal</span>
@@ -148,7 +148,7 @@
             <li><span>Right-click it again and choose <b>Add to Steam</b>. No such entry? Open Steam → <b>Games</b> → <b>Add a Non-Steam Game</b> → <b>Browse</b>, set the filter to <b>All Files</b> and pick the file.</span></li>
             <li><span>Switch back to Game Mode. Tome is under <b>Library → Non-Steam</b>.</span></li>
           </ol>
-          <p class="note">To update later, download the new version and replace the old file with it (same name, same folder). Your library and progress stay.</p>
+          <p class="note">Updates come to you: from v0.7.0, Tome shows <b>Update available</b> when there's a new version, and <b>Menu → Settings → Software update</b> installs it without leaving Game Mode. Your library and progress stay.</p>
         </div>
         <div class="card">
           <span class="eyebrow">One command</span>
@@ -161,7 +161,7 @@
           <ol class="steps">
             <li><span>Downloads the latest version to <b>~/Applications/Tome.AppImage</b>.</span></li>
             <li><span>Adds Tome to the Desktop Mode menu and, the first time, to Steam.</span></li>
-            <li><span>Run the same command again any time to <b>update</b>.</span></li>
+            <li><span>Later versions install from inside Tome (Settings → Software update); running the command again also <b>updates</b>.</span></li>
           </ol>
           <p class="small">Remove Tome with <code>curl -sL https://zgn-bhr.github.io/tome/install | bash -s -- --uninstall</code>. It's a short <a href="install">script you can read first</a>.</p>
         </div>
@@ -189,7 +189,7 @@
         <div class="feature"><div class="bar"></div><h3>Built for controllers</h3><p>D-pad, sticks, triggers to zoom, back grips to turn pages. Touch still works.</p></div>
         <div class="feature"><div class="bar"></div><h3>Papers done right</h3><p>Margins cropped, two-column pages read column by column, scans included.</p></div>
         <div class="feature"><div class="bar"></div><h3>A light game layer</h3><p>Stages from chapters, XP for pages you really read, streaks and trophies.</p></div>
-        <div class="feature"><div class="bar"></div><h3>Yours, offline</h3><p>Reads PDFs from your folders and SD card. No account, no tracking.</p></div>
+        <div class="feature"><div class="bar"></div><h3>Yours, offline</h3><p>Reads PDFs from your folders and SD card. No account, no tracking. Once a day it asks GitHub if there's a new version; you can turn that off.</p></div>
       </div>
     </div>
   </section>

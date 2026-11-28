@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
   backGripKeys: { ...DEFAULT_BACK_GRIP_KEYS },
   haptics: true,
   reduceMotion: false,
+  checkUpdates: true,
   debugOverlay: false,
 };
 

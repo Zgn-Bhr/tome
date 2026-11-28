@@ -13,6 +13,7 @@ import { listDir, scanLibrary } from './library';
 import { dataDir, libraryOverride } from './paths';
 import { SettingsStore } from './settings';
 import { runSmoke } from './smoke';
+import { Updater } from './updater';
 
 const isDev = !app.isPackaged;
 const rendererDir = join(import.meta.dirname, '../renderer');
@@ -37,12 +38,14 @@ function wantsFullscreen(): boolean {
 
 let db: TomeDb;
 let settings: SettingsStore;
+let updater: Updater;
 let dir: string;
 let win: BrowserWindow | null = null;
 let scanning: Promise<void> | null = null;
 
 function env(): AppEnv {
   return {
+    version: app.getVersion(),
     platform: process.platform,
     gameMode: !!(process.env.SteamGamepadUI || process.env.GAMESCOPE_WAYLAND_DISPLAY),
     isDev,
@@ -227,6 +230,10 @@ function registerIpc(): void {
   ipcMain.handle(IPC.quit, () => {
     app.quit();
   });
+  ipcMain.handle(IPC.updateState, () => updater.get());
+  ipcMain.handle(IPC.checkForUpdates, () => updater.check(true));
+  ipcMain.handle(IPC.downloadUpdate, () => updater.download());
+  ipcMain.handle(IPC.restartToUpdate, () => updater.restart());
 }
 
 // ── Window ───────────────────────────────────────────────────────────────
@@ -283,10 +290,17 @@ app.whenReady().then(() => {
   dir = dataDir();
   db = new TomeDb(join(dir, 'tome.db'));
   settings = new SettingsStore(dir);
+  updater = new Updater(dir, (s) => {
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.update, s);
+  });
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
   registerProtocol();
   registerIpc();
   createWindow();
+  // Update check: shortly after launch (not to slow startup), then hourly; each
+  // only asks GitHub if the setting is on and the last check was a day ago.
+  setTimeout(() => updater.autoCheck(settings.get().checkUpdates), 8000);
+  setInterval(() => updater.autoCheck(settings.get().checkUpdates), 60 * 60 * 1000);
   powerMonitor.on('suspend', () => sendPower('suspend'));
   powerMonitor.on('resume', () => sendPower('resume'));
   app.on('second-instance', () => {

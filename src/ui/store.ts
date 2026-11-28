@@ -5,7 +5,7 @@ import type { Book, BookStats, Bookmark, Collection, ReadingState, Settings, Sta
 import { DEFAULT_SETTINGS } from '../core/settings';
 import { progressOf, type BookView } from '../core/library';
 import { ledgerFacts, type LedgerFacts } from '../core/gamification/engine';
-import type { AppEnv } from '../shared/api';
+import type { AppEnv, UpdateState } from '../shared/api';
 
 export interface AppState {
   ready: boolean;
@@ -29,6 +29,8 @@ export interface AppState {
   indexing: { done: number; total: number } | null;
   /** The reader is open: background indexing pauses (§12 battery). */
   reading: boolean;
+  /** In-app update progress, pushed by the main process. */
+  update: UpdateState;
 }
 
 let state: AppState = {
@@ -50,6 +52,7 @@ let state: AppState = {
   scanning: false,
   indexing: null,
   reading: false,
+  update: { kind: 'unsupported' },
 };
 
 const listeners = new Set<() => void>();

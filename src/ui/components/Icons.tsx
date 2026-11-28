@@ -80,6 +80,13 @@ export const Folder = ({ size = 22, color = '#A6AECB' }: P) => (
   </svg>
 );
 
+/** Arrow into a tray: software updates. */
+export const DownloadIcon = ({ size = 18, color = '#58C7E6' }: P) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4.5 16.5v2a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-2" />
+  </svg>
+);
+
 export const Spinner = ({ size = 18, color = '#58C7E6' }: P) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" style={{ animation: 'spin 900ms linear infinite' }}>
     <path d="M12 3a9 9 0 1 1-9 9" />

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { UpdateState } from '../shared/api';
 import { bootstrap } from './actions';
 import { api } from './api';
 import { InputProvider, useInput, useInputApi } from './input/InputProvider';
@@ -107,8 +108,30 @@ function Root() {
       {overlay === 'settings' ? <SettingsOverlay onClose={closeOverlay} onAddFolder={() => setOverlay('folders')} /> : null}
       {overlay === 'folders' && !needsFolder ? <FolderPicker onClose={closeOverlay} /> : null}
       {debug ? <DebugOverlay /> : null}
+      <UpdateNotices />
     </NavCtx.Provider>
   );
+}
+
+/** Toasts for in-app updates: a new version (once per version per run), installed, or a failed download. */
+function UpdateNotices() {
+  const u = useApp((s) => s.update);
+  const toast = useToast();
+  const announced = useRef(new Set<string>());
+  const prev = useRef<UpdateState['kind']>(u.kind);
+  useEffect(() => {
+    const was = prev.current;
+    prev.current = u.kind;
+    if (u.kind === 'available' && !announced.current.has(u.version)) {
+      announced.current.add(u.version);
+      toast.show({ kind: 'neutral', icon: 'update', eyebrow: 'UPDATE AVAILABLE', line: `Tome ${u.version} · install it from Settings` });
+    } else if (u.kind === 'ready' && was !== 'ready') {
+      toast.show({ kind: 'neutral', icon: 'update', eyebrow: 'UPDATE INSTALLED', line: `Tome ${u.version} starts next time, or restart in Settings` });
+    } else if (u.kind === 'error' && u.version && was === 'downloading') {
+      toast.show({ kind: 'neutral', icon: 'update', eyebrow: 'UPDATE FAILED', line: u.message });
+    }
+  }, [u, toast]);
+  return null;
 }
 
 function Loading() {

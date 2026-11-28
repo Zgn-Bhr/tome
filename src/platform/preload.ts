@@ -1,7 +1,7 @@
 // Preload bridge: exposes the typed API from shared/api.ts as window.tome.
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { PowerEvent, TomeApi } from '../shared/api';
+import type { PowerEvent, TomeApi, UpdateState } from '../shared/api';
 
 // Channel names are inlined (not imported) so the sandboxed preload stays a single file.
 const api: TomeApi = {
@@ -25,6 +25,15 @@ const api: TomeApi = {
     const listener = (_e: unknown, ev: PowerEvent) => cb(ev);
     ipcRenderer.on('tome:power', listener);
     return () => ipcRenderer.removeListener('tome:power', listener);
+  },
+  updateState: () => ipcRenderer.invoke('tome:updateState'),
+  checkForUpdates: () => ipcRenderer.invoke('tome:checkForUpdates'),
+  downloadUpdate: () => ipcRenderer.invoke('tome:downloadUpdate'),
+  restartToUpdate: () => ipcRenderer.invoke('tome:restartToUpdate'),
+  onUpdate: (cb) => {
+    const listener = (_e: unknown, s: UpdateState) => cb(s);
+    ipcRenderer.on('tome:update', listener);
+    return () => ipcRenderer.removeListener('tome:update', listener);
   },
 };
 

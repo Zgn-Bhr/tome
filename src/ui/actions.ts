@@ -34,6 +34,23 @@ export async function bootstrap(): Promise<void> {
   }));
   if (b.settings.rescanOnLaunch || b.books.length === 0) void rescan();
   else void indexPending();
+  api.onUpdate((update) => store.set(() => ({ update })));
+  const update = await api.updateState();
+  store.set(() => ({ update }));
+}
+
+// ── In-app updates ──────────────────────────────────────────────────────
+
+export function checkForUpdates(): void {
+  void api.checkForUpdates();
+}
+
+export function downloadUpdate(): void {
+  void api.downloadUpdate();
+}
+
+export function restartToUpdate(): void {
+  void api.restartToUpdate();
 }
 
 export async function rescan(): Promise<void> {

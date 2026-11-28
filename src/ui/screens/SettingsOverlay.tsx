@@ -4,7 +4,10 @@
 import { useMemo } from 'react';
 import type { Settings } from '../../core/models';
 import { columnGraph } from '../../core/input/focus';
-import { rescan, updateSettings } from '../actions';
+import { checkForUpdates, downloadUpdate, rescan, restartToUpdate, updateSettings } from '../actions';
+import { compactSince } from '../../core/time';
+import { formatMegabytes } from '../../core/update';
+import type { UpdateState } from '../../shared/api';
 import { useInput } from '../input/InputProvider';
 import { useFocus } from '../focus/useFocus';
 import { useApp } from '../store';
@@ -14,7 +17,7 @@ import { MenuList, Scrim, type MenuRow } from '../components/Overlay';
 import { useToast } from '../components/Toast';
 
 type EnumKey = 'pageTheme' | 'gutters' | 'defaultFit' | 'pageTransition' | 'gameIntensity';
-type BoolKey = 'zen' | 'haptics' | 'reduceMotion' | 'debugOverlay' | 'rescanOnLaunch' | 'includeSdCards' | 'gameManuals' | 'autoCrop';
+type BoolKey = 'zen' | 'haptics' | 'reduceMotion' | 'debugOverlay' | 'rescanOnLaunch' | 'includeSdCards' | 'gameManuals' | 'autoCrop' | 'checkUpdates';
 
 const ENUMS: Record<EnumKey, { label: string; options: string[] }> = {
   pageTheme: { label: 'Page theme', options: ['paper', 'sepia', 'night', 'dim'] },
@@ -31,10 +34,12 @@ const BOOLS: Record<BoolKey, string> = {
   rescanOnLaunch: 'Rescan on launch',
   includeSdCards: 'Include SD cards',
   gameManuals: 'Game manuals (ES-DE)',
+  checkUpdates: 'Check for updates automatically',
   debugOverlay: 'Debug overlay',
 };
 
-const ORDER: (EnumKey | BoolKey | 'folders' | 'rescan' | 'dailyGoal' | 'grips')[] = [
+const ORDER: (EnumKey | BoolKey | 'update' | 'folders' | 'rescan' | 'dailyGoal' | 'grips')[] = [
+  'update',
   'folders',
   'rescan',
   'includeSdCards',
@@ -51,17 +56,63 @@ const ORDER: (EnumKey | BoolKey | 'folders' | 'rescan' | 'dailyGoal' | 'grips')[
   'haptics',
   'grips',
   'reduceMotion',
+  'checkUpdates',
   'debugOverlay',
 ];
+
+/** The Software update row: what A does is in the value on the right. */
+function updateRow(u: UpdateState, version: string, now: number): MenuRow {
+  const since = (t: number) => {
+    const s = compactSince(t, now);
+    return s === 'now' ? 'just now' : `${s} ago`;
+  };
+  const row = (label: string, value: string, hint: string): MenuRow => ({ id: 'update', label, value, tag: true, hint });
+  switch (u.kind) {
+    case 'unsupported':
+      return row('Software update', `v${version}`, 'Only the AppImage (Steam Deck, Linux) updates itself');
+    case 'idle':
+      return row('Software update', 'CHECK NOW', `Version ${version}${u.checkedAt ? ` · checked ${since(u.checkedAt)}` : ''}`);
+    case 'checking':
+      return row('Software update', 'CHECKING…', `Version ${version}`);
+    case 'current':
+      return row('Software update', 'UP TO DATE', `Version ${version} · checked ${since(u.checkedAt)} · A checks again`);
+    case 'available':
+      return row(`Update to ${u.version}`, `INSTALL · ${formatMegabytes(u.size)}`, `${u.title} · you have ${version}`);
+    case 'downloading':
+      return row(`Downloading ${u.version}`, `${Math.floor((u.received / u.size) * 100)}%`, 'Keep reading: it installs itself when done');
+    case 'ready':
+      return row(`Tome ${u.version} is installed`, 'RESTART NOW', 'Or it starts with the new version next time');
+    case 'error':
+      return row(u.version ? `Update to ${u.version}` : 'Software update', 'TRY AGAIN', u.message);
+  }
+}
 
 const VISIBLE = 8;
 
 export function SettingsOverlay({ onClose, onAddFolder }: { onClose: () => void; onAddFolder: () => void }) {
   const s = useApp((st) => st.settings);
   const override = useApp((st) => st.env?.libraryOverride);
+  const version = useApp((st) => st.env?.version ?? '');
+  const update = useApp((st) => st.update);
   const toast = useToast();
   const graph = useMemo(() => columnGraph(ORDER), []);
-  const { focused, navigate } = useFocus('settings', graph, 'folders');
+  const { focused, navigate } = useFocus('settings', graph, update.kind === 'available' || update.kind === 'ready' ? 'update' : 'folders');
+
+  const updateAction = () => {
+    switch (update.kind) {
+      case 'idle':
+      case 'current':
+        return checkForUpdates();
+      case 'available':
+        return downloadUpdate();
+      case 'ready':
+        return restartToUpdate();
+      case 'error':
+        return update.version ? downloadUpdate() : checkForUpdates();
+      default:
+        return; // unsupported, checking, downloading
+    }
+  };
 
   const set = (patch: Partial<Settings>) => void updateSettings(patch);
   const step = (key: string, d: 1 | -1) => {
@@ -86,6 +137,7 @@ export function SettingsOverlay({ onClose, onAddFolder }: { onClose: () => void;
       if (e.action === 'nav_right') return step(focused, 1);
       if (navigate(e.action)) return;
       if (e.action === 'confirm') {
+        if (focused === 'update') return updateAction();
         if (focused === 'folders') return onAddFolder();
         if (focused === 'rescan') {
           toast.show({ kind: 'neutral', eyebrow: 'LIBRARY', line: 'Rescanning folders…' });
@@ -99,6 +151,7 @@ export function SettingsOverlay({ onClose, onAddFolder }: { onClose: () => void;
   });
 
   const rows: MenuRow[] = ORDER.map((k) => {
+    if (k === 'update') return updateRow(update, version, Date.now());
     if (k === 'folders')
       return { id: k, label: 'Library folders', value: `${s.folders.length} · ADD`, tag: true, hint: override ? 'Overridden by TOME_LIBRARY_DIRS (development)' : s.folders.join(' · ') };
     if (k === 'rescan') return { id: k, label: 'Rescan now', hint: 'Look for new, moved and removed PDFs' };

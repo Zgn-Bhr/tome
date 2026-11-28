@@ -19,7 +19,7 @@ The easiest way is the download page, **https://zgn-bhr.github.io/tome/**: a Dow
    It downloads the latest release into `~/Applications/Tome.AppImage`, adds a menu entry and, on first install, adds Tome to Steam with SteamOS's `steamos-add-to-steam` (verify on device). If that helper isn't found, it tells you how to add Tome by hand (step 3 below).
 4. Switch back to Game Mode. Tome is under **Library → Non-Steam**.
 
-**Update** later by running the same command; the Steam shortcut and your progress stay as they are. Other options:
+**Update** without leaving Game Mode (from v0.7.0): Tome checks GitHub once a day and shows **Update available** when there's a new version. Open **☰ (Menu) → Software update** and press A to install it (it downloads in the background and checks the file against the checksum GitHub publishes), then A again on **Restart now**, or just start Tome next time. Turn off **Check for updates automatically** to stop the daily check; **Software update** still checks when you press A. Running the same command again also updates. Either way, the Steam shortcut and your progress stay as they are. Other options:
 
 ```bash
 curl -sL https://zgn-bhr.github.io/tome/install | bash -s -- --version v0.1.0
@@ -92,7 +92,7 @@ The D-pad, sticks, face buttons, shoulders and triggers work out of the box thro
 
 ## Where things are stored
 
-`~/.local/share/tome/` holds `tome.db` (SQLite, WAL), `settings.json` and `thumbs/`. Your PDFs are never moved or changed.
+`~/.local/share/tome/` holds `tome.db` (SQLite, WAL), `settings.json`, `update.json` (when updates were last checked) and `thumbs/`. Your PDFs are never moved or changed.
 
 ## Troubleshooting (verify on device)
 
@@ -102,4 +102,6 @@ The D-pad, sticks, face buttons, shoulders and triggers work out of the box thro
 | Black or blank window in Game Mode | Launch option `--ozone-platform=x11`; if that doesn't help, also `--disable-gpu`. |
 | Controller does nothing | Press any button once (browsers only expose a gamepad after its first input). Then turn on **Menu → Debug overlay**, which lists the gamepads Tome sees. |
 | Back grips do nothing | Bind them to keys in the Steam Input layout ([steam-input-layout.md](steam-input-layout.md)). |
+| Update says "Can't write next to the AppImage" | The folder holding the AppImage must be writable; move it to `~/Applications` (or reinstall with the command above). |
+| After **Restart now**, Tome doesn't come back | Start it again from the Library; the new version is already installed. |
 | Wrong position after suspend | Report it with the page you were on. Position is saved on every page change, every 10 s and on suspend. |
