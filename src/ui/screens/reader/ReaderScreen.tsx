@@ -1116,10 +1116,11 @@ export function ReaderScreen({ bookId, jumpTo }: { bookId: string; jumpTo?: numb
           if (t >= 1) st.tween = null;
           changed = true;
         }
-        if (a.scroll || a.panY) {
+        // Either stick: up/down scrolls, left/right pans (§6.3, both sticks alike).
+        if (a.scroll) {
           st.tween = null;
           st.bumpArmed = null;
-          st.v = { ...st.v, scrollY: st.v.scrollY + (a.scroll + a.panY) * dt };
+          st.v = { ...st.v, scrollY: st.v.scrollY + a.scroll * dt };
           changed = true;
         }
         if (a.panX) {

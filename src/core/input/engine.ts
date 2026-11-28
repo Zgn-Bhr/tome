@@ -34,11 +34,10 @@ export const EMPTY_FRAME: PadFrame = { buttons: new Set(), lx: 0, ly: 0, rx: 0, 
 const NO_BUTTONS: ReadonlySet<Button> = new Set();
 
 export interface AnalogOutput {
-  /** Vertical scroll velocity from the left stick, px/s (positive = down). */
+  /** Vertical scroll velocity from either stick, px/s (positive = down). */
   scroll: number;
-  /** Pan velocity from the right stick, px/s. */
+  /** Horizontal pan velocity from either stick, px/s (positive = right). */
   panX: number;
-  panY: number;
   /** Signed zoom drive, -1..1 (R2 − L2 after deadzone). */
   zoom: number;
 }
@@ -154,24 +153,32 @@ export class InputEngine {
     }
     for (const b of [...this.held.keys()]) if (!pressed.has(b)) this.held.delete(b);
 
-    // 5. Analog outputs.
+    // 5. Analog outputs. In the reader both sticks do the same: up/down scrolls,
+    // left/right pans (where the page is wider than the screen). Each axis has its
+    // own deadzone, so a push straight up doesn't drift sideways, and two sticks
+    // together never go faster than one.
     const right = rotateVector(frame.rx, frame.ry, rotation);
-    const scroll = context === 'reader' ? stickVelocity(left.y, INPUT.scrollMaxPxPerSec) : 0;
-    const panX = context === 'reader' ? stickVelocity(right.x, INPUT.panMaxPxPerSec) : 0;
-    const panY = context === 'reader' ? stickVelocity(right.y, INPUT.panMaxPxPerSec) : 0;
+    const reader = context === 'reader';
+    const both = (a: number, b: number, max: number) => (reader ? clampAbs(stickVelocity(a, max) + stickVelocity(b, max), max) : 0);
+    const scroll = both(left.y, right.y, INPUT.scrollMaxPxPerSec);
+    const panX = both(left.x, right.x, INPUT.panMaxPxPerSec);
     const zoom = analogTriggers ? triggerValue(frame.r2) - triggerValue(frame.l2) : 0;
 
     const active =
       pressed.size > 0 ||
       scroll !== 0 ||
       panX !== 0 ||
-      panY !== 0 ||
       zoom !== 0 ||
       Math.hypot(frame.lx, frame.ly) > INPUT.stickDeadzone ||
       Math.hypot(frame.rx, frame.ry) > INPUT.stickDeadzone ||
       frame.l2 > INPUT.triggerDeadzone ||
       frame.r2 > INPUT.triggerDeadzone;
 
-    return { events, analog: { scroll, panX, panY, zoom }, active };
+    return { events, analog: { scroll, panX, zoom }, active };
   }
+}
+
+/** Limit |v| to `max`, keeping the sign. */
+function clampAbs(v: number, max: number): number {
+  return Math.max(-max, Math.min(max, v));
 }

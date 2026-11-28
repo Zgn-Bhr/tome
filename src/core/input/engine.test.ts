@@ -73,6 +73,24 @@ describe('InputEngine', () => {
     expect(out.analog.scroll).toBeCloseTo(INPUT.scrollMaxPxPerSec);
   });
 
+  it('gives both sticks both directions in the reader', () => {
+    const up = (rest: Partial<PadFrame>) => new InputEngine().update(frame([], rest), 0, 'reader').analog;
+    // Left stick sideways pans; right stick up/down scrolls at the same speed as the left.
+    expect(up({ lx: 1 }).panX).toBeCloseTo(INPUT.panMaxPxPerSec);
+    expect(up({ ry: -1 }).scroll).toBeCloseTo(-INPUT.scrollMaxPxPerSec);
+    expect(up({ rx: -1 }).panX).toBeCloseTo(-INPUT.panMaxPxPerSec);
+    // A push mostly up with a little sideways drift doesn't pan (per-axis deadzone).
+    const drift = up({ ly: -1, lx: 0.2 });
+    expect(drift.panX).toBe(0);
+    expect(drift.scroll).toBeCloseTo(-INPUT.scrollMaxPxPerSec);
+    // Both sticks the same way: no faster than one; opposite ways cancel.
+    expect(up({ ly: 1, ry: 1 }).scroll).toBeCloseTo(INPUT.scrollMaxPxPerSec);
+    expect(up({ lx: 1, rx: -1 }).panX).toBeCloseTo(0);
+    // Outside the reader the sticks don't scroll or pan.
+    const lib = new InputEngine().update(frame([], { rx: 1, ry: 1 }), 0, 'library').analog;
+    expect([lib.scroll, lib.panX]).toEqual([0, 0]);
+  });
+
   it('treats triggers as buttons in the library and as zoom in the reader', () => {
     const lib = new InputEngine().update(frame([], { r2: 0.9 }), 0, 'library');
     expect(lib.events[0]?.action).toBe('filter_next');

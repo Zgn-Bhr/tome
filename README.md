@@ -123,6 +123,7 @@ scripts/      fixture generator, pdf.js asset copy
 - **Heading stages** follow the one-page merge rule (§13): a one-page "Abstract" stage merges into the next stage.
 - **Toasts:** several trophies unlocked at the same moment share one toast; pending toasts are dropped when Session complete opens (it lists them all); toasts sit below the HUD's top bar while the HUD is open.
 - **Home "Read again":** when every book is opened and the Continue card would show a cleared book, it says "Cleared · Read again" instead of "Start reading".
+- **Both sticks move both ways in the reader (owner's request after on-device testing):** §6.3 has the left stick scroll (vertical only) and the right stick pan. Now either stick does both: up/down scrolls (2400 px/s max), left/right pans where the page is wider than the screen (1800 px/s max). Each axis keeps its own 0.25 deadzone, so a push straight up doesn't drift sideways, and both sticks together are no faster than one.
 - **Reader D-pad ←/→:** the spec's table reads "D-pad ← / → · Next / previous page". I mapped ← to previous and → to next; the literal order looks like a typo.
 - **B with the HUD open saves and leaves** (the HUD's own "B Library" prompt). §7.5 says the HUD "stays open until A or B", which this also satisfies.
 - **Front matter:** if the first outline entry starts 3 or more pages in, those pages become a "Front matter" stage; a shorter gap joins stage 1.
